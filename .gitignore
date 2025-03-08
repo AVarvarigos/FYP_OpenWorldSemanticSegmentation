@@ -171,12 +171,12 @@ cython_debug/
 .pypirc
 
 # Project specific ignores
-results/
-output/
-runs/
-CityScapes/
-trained_models/
-datasets/
-logs/
-loss_plot.png
-resnet50-19c8e357.pth
+*results/
+*output/
+*runs/
+*CityScapes/
+*trained_models/
+*datasets/
+*logs/
+*loss_plot.png
+*resnet50-19c8e357.pth
