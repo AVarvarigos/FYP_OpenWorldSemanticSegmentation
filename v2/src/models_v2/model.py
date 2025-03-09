@@ -14,6 +14,7 @@ from src.models_v2.resnet import ResNet18, ResNet34, ResNet50
 from src.models_v2.context_modules import get_context_module
 from src.models_v2.model_utils import ConvBNAct, Swish, Hswish
 from src.models_v2.decoder import Decoder
+from src.models_v2.tru_for_decoder import TruForDecoderHead
 
 
 class OWSNetwork(nn.Module):
@@ -34,6 +35,7 @@ class OWSNetwork(nn.Module):
         nr_decoder_blocks=None,  # default: [1, 1, 1]
         weighting_in_encoder="None",
         upsampling="bilinear",
+        tru_for_decoder=False
     ):
         super(OWSNetwork, self).__init__()
         if channels_decoder is None:
@@ -42,6 +44,7 @@ class OWSNetwork(nn.Module):
             nr_decoder_blocks = [1, 1, 1]
 
         self.weighting_in_encoder = weighting_in_encoder
+        self.tru_for_decoder = tru_for_decoder
 
         if activation.lower() == "relu":
             self.activation = nn.ReLU(inplace=True)
@@ -171,35 +174,52 @@ class OWSNetwork(nn.Module):
             num_classes=19,
         )
 
+        if self.tru_for_decoder:
+            self.decoder_trufor = TruForDecoderHead(
+                in_channels=[64, 128, 256, 512],
+                dropout_ratio=0.1,
+                norm_layer=nn.BatchNorm2d,
+                embed_dim=768,
+                align_corners=False,
+                num_classes=num_classes
+            )
+
     def forward(self, image):
         out = self.encoder.forward_first_conv(image)
         out = self.se_layer0(out)
         out = F.max_pool2d(out, kernel_size=3, stride=2, padding=1)
 
         # block 1
-        out = self.encoder.forward_layer1(out)
-        out = self.se_layer1(out)
-        skip1 = self.skip_layer1(out)
+        out_64 = self.encoder.forward_layer1(out)
+        out_64 = self.se_layer1(out_64)
+        skip1 = self.skip_layer1(out_64)
 
         # block 2
-        out = self.encoder.forward_layer2(out)
-        out = self.se_layer2(out)
-        skip2 = self.skip_layer2(out)
+        out_128 = self.encoder.forward_layer2(out_64)
+        out_128 = self.se_layer2(out_128)
+        skip2 = self.skip_layer2(out_128)
 
         # block 3
-        out = self.encoder.forward_layer3(out)
-        out = self.se_layer3(out)
-        skip3 = self.skip_layer3(out)
+        out_256 = self.encoder.forward_layer3(out_128)
+        out_256 = self.se_layer3(out_256)
+        skip3 = self.skip_layer3(out_256)
 
         # block 4
-        out = self.encoder.forward_layer4(out)
-        out = self.se_layer4(out)
+        out_512 = self.encoder.forward_layer4(out_256)
+        out_512 = self.se_layer4(out_512)
 
-        out = self.context_module(out)
+        out = self.context_module(out_512)
 
-        outs = [out, skip3, skip2, skip1]
+        outs = [out_512, skip3, skip2, skip1]
 
-        return self.decoder_ss(enc_outs=outs), self.decoder_ow(enc_outs=outs)
+        tru_for_result = None
+        ow_output = self.decoder_ow(enc_outs=outs)
+        if self.tru_for_decoder:
+            input_tru_for = [out_64, out_128, out_256, out_512]
+            tru_for_result = self.decoder_trufor(input_tru_for)
+            ow_output = F.normalize(tru_for_result) + F.normalize(ow_output)
+
+        return self.decoder_ss(enc_outs=outs), ow_output
 
 
 def main():

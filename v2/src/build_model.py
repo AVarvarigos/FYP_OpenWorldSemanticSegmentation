@@ -58,6 +58,7 @@ def build_model(args, n_classes):
         nr_decoder_blocks=nr_decoder_blocks,
         channels_decoder=channels_decoder,
         upsampling=args.upsampling,
+        tru_for_decoder=args.tru_for
     )
 
     if torch.cuda.is_available():
@@ -92,7 +93,8 @@ def build_model(args, n_classes):
         for i, m in enumerate(module_list):
             if isinstance(m, (nn.Conv2d, nn.Conv1d, nn.Linear)):
                 if (
-                    m.out_channels == n_classes
+                    not hasattr(m, "out_channels")
+                    or m.out_channels == n_classes
                     or m.out_channels == 19
                     or isinstance(module_list[i + 1], nn.Sigmoid)
                     or m.groups == m.in_channels
