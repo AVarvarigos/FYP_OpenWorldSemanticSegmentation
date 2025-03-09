@@ -176,7 +176,6 @@ cython_debug/
 *runs/
 *CityScapes/
 *trained_models/
-*datasets/
 *logs/
 *loss_plot.png
 *resnet50-19c8e357.pth

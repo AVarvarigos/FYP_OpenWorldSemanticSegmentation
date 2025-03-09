@@ -1,0 +1,10 @@
+datasets/*
+trained_models/*
+runs/*
+results/*
+*__pycache__*
+src/datasets/cityscapes/Downloads/
+wandb/
+src/ContMav.weights
+plots/
+output/
