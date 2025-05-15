@@ -269,29 +269,29 @@ def train_one_epoch(
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
-        sample["label"] = sample["label"] - 1
+        sample["label"] = sample["label"] - 2
         label_ss = sample["label"].clone().cuda()
-        label_ss[label_ss == 255] = 0
-        target_scales = label_ss
+        # label_ss[label_ss == 255] = 0
+        # target_scales = label_ss
 
         for param in model.parameters():
             param.grad = None
 
         # forward pass
         pred_scales, ow_res = model(image)
-        cw_target = target_scales.clone()
-        # cw_target[cw_target > 16] = 255
+        cw_target = label_ss.clone()
+        # cw_target[cw_target > 15] = -1
         losses = loss_function_train(pred_scales, cw_target)
         loss_segmentation = sum(losses)
         loss_objectosphere = torch.tensor(0.0)
         loss_ows = torch.tensor(0.0)
         loss_con = torch.tensor(0.0)
         total_loss = 0.9 * loss_segmentation
-        label = sample["label"].long().cuda() - 2
-        label[label < 0] = 255
+        label = sample["label"].long().cuda()
+        # label[label < 0] = 255
 
         if loss_obj is not None:
-            label_ow = label.clone().cuda().to(torch.uint8)
+            label_ow = label.clone().cuda()
             loss_objectosphere = loss_obj(ow_res, label_ow)
             total_loss += 0.5 * loss_objectosphere
         if loss_mav is not None:
@@ -421,31 +421,33 @@ def validate(
             if not device.type == "cpu":
                 torch.cuda.synchronize()
 
-            target = sample["label"].long().cuda() - 2
-            target[target == -1] = 255
-            compute_iou.update(prediction_ss, target.cuda())
+            sample["label"] = sample["label"].long().cuda() - 2
+            target = sample["label"].clone().cuda()
+            target_iou = sample["label"].clone().cuda()
+            target_iou[target_iou == -1] = 255
+            compute_iou.update(prediction_ss, target_iou.cuda())
 
 
-            if epoch % 5 == 0:
+            if epoch % 5 == 0 and i == 0 and plot_results:
                 plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes)
 
             # compute valid loss
             loss_function_valid.add_loss_of_batch(
-                prediction_ss, sample["label"].to(device) - 1
+                prediction_ss, sample["label"].to(device)
             )
 
             loss_objectosphere = torch.tensor(0)
             loss_ows = torch.tensor(0)
             loss_con = torch.tensor(0)
             if loss_obj is not None:
-                target_obj = sample["label"] - 1
-                target_obj[target_obj == 16] = 255
-                target_obj[target_obj == 17] = 255
-                target_obj[target_obj == 18] = 255
-                loss_objectosphere = loss_obj(prediction_ow, sample["label"] - 1)
+                # target_obj = sample["label"].clone().cuda()
+                # target_obj[target_obj == 16] = -1
+                # target_obj[target_obj == 17] = -1
+                # target_obj[target_obj == 18] = -1
+                loss_objectosphere = loss_obj(prediction_ow, target)
             total_loss_obj.append(loss_objectosphere.cpu().detach().numpy())
             if loss_mav is not None:
-                loss_ows = loss_mav(prediction_ss, target.cuda(), is_train=False)
+                loss_ows = loss_mav(prediction_ss, target, is_train=False)
             total_loss_mav.append(loss_ows.cpu().detach().numpy())
             if loss_contrastive is not None:
                 loss_con = loss_contrastive(mavs, prediction_ow, target, epoch)
@@ -617,7 +619,7 @@ def plot_images(
 
         # Process prediction_ow (open-world segmentation prediction)
         # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
-        ows_target = target.long() - 1
+        ows_target = target.long()
         ows_target[ows_target < classes] = 0
         ows_binary_gt = 255*ows_target.bool().long()
         ows_binary_gt = ows_binary_gt[idx].detach().cpu().numpy()
