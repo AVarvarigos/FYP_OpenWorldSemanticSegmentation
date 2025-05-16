@@ -9,7 +9,8 @@
   --encoder resnet34 \
   --encoder_block NonBottleneck1D \
   --plot_results true \
-  --freeze 20
+  --freeze 20 \
+  --lr 0.004
   # --overfit true \
   # --debug
   # --no_imagenet_pretraining \
