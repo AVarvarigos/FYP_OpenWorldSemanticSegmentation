@@ -440,6 +440,8 @@ def validate(
             loss_ows = torch.tensor(0)
             loss_con = torch.tensor(0)
             if loss_obj is not None:
+                # CityScapes uses all classes
+                # BDDAnomoly does not use 16-18
                 # target_obj = sample["label"].clone().cuda()
                 # target_obj[target_obj == 16] = -1
                 # target_obj[target_obj == 17] = -1
