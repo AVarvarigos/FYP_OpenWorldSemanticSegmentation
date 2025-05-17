@@ -18,9 +18,10 @@ import torch.nn.functional as F
 
 
 class ContrastiveLoss(nn.Module):
-    def __init__(self, n_classes=19):
+    def __init__(self, n_classes=19, void_label=-1):
         super().__init__()
         self.n_classes = n_classes
+        self.void_label = void_label
 
     def forward(self, emb_k, emb_q, labels, epoch, tau=0.1):
         """
@@ -30,16 +31,14 @@ class ContrastiveLoss(nn.Module):
         """
         if epoch:
             total_loss = torch.tensor(0.0).cuda()
-            assert (
-                emb_q.shape[0] == labels.shape[0]
-            ), "mismatch on emb_q and labels shapes!"
+            assert (emb_q.shape[0] == labels.shape[0]), "mismatch on emb_q and labels shapes!"
             emb_k = F.normalize(emb_k, dim=-1)
             emb_q = F.normalize(emb_q, dim=1)
-
+        
             for i, emb in enumerate(emb_q):
                 label = labels[i]
-                if not (255 in label.unique() and len(label.unique()) == 1):
-                    label[label == 255] = self.n_classes
+                if not (self.void_label in label.unique() and len(label.unique()) == 1):
+                    label[label == self.void_label] = self.n_classes
                     label_sq = torch.unique(label, return_inverse=True)[1]
                     oh_label = (F.one_hot(label_sq)).unsqueeze(-2)  # one hot labels
                     count = oh_label.view(-1, oh_label.shape[-1]).sum(
@@ -75,24 +74,19 @@ class ContrastiveLoss(nn.Module):
 
 
 class OWLoss(nn.Module):
-    def __init__(self, n_classes, hinged=False, delta=0.1):
+    def __init__(self, n_classes, hinged=False, delta=0.1, void_label=-1):
         super().__init__()
         self.n_classes = n_classes
         self.hinged = hinged
+        self.void_label = void_label
         self.delta = delta
         self.count = torch.zeros(self.n_classes).cuda()  # count for class
-        self.features = {
-            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
-        }
+        self.features = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
         # See https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
         # for implementation of Welford Alg.
         self.ex = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-        self.ex2 = {
-            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
-        }
-        self.var = {
-            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
-        }
+        self.ex2 = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
+        self.var = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
 
         self.criterion = torch.nn.L1Loss(reduction="none")
 
@@ -105,7 +99,7 @@ class OWLoss(nn.Module):
         gt_labels = torch.unique(sem_gt).tolist()
         logits_permuted = logits.permute(0, 2, 3, 1)
         for label in gt_labels:
-            if label == 255:
+            if label == self.void_label:
                 continue
             sem_gt_current = sem_gt == label
             sem_pred_current = sem_pred == label
@@ -118,21 +112,17 @@ class OWLoss(nn.Module):
             avg_mav = torch.mean(logits_tps, dim=0)
             n_tps = logits_tps.shape[0]
             # features is running mean for mav
-            self.features[label] = (
-                self.features[label] * self.count[label] + avg_mav * n_tps
-            )
+            self.features[label] = (self.features[label] * self.count[label] + avg_mav * n_tps)
 
             self.ex[label] += (logits_tps).sum(dim=0)
             self.ex2[label] += ((logits_tps) ** 2).sum(dim=0)
             self.count[label] += n_tps
             self.features[label] /= self.count[label] + 1e-8
 
-    def forward(
-        self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: torch.bool
-    ) -> torch.Tensor:
+    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: torch.bool) -> torch.Tensor:
         if is_train:
             # update mav only at training time
-            sem_gt = sem_gt.type(torch.uint8)
+            sem_gt = sem_gt#.type(torch.uint8)
             self.cumulate(logits, sem_gt)
         if self.previous_features == None:
             return torch.tensor(0.0).cuda()
@@ -141,7 +131,7 @@ class OWLoss(nn.Module):
         logits_permuted = logits.permute(0, 2, 3, 1)
 
         acc_loss = torch.tensor(0.0).cuda()
-        for label in gt_labels[:-1]:
+        for label in gt_labels[1:]:
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
@@ -158,19 +148,13 @@ class OWLoss(nn.Module):
         self.previous_features = self.features
         self.previous_count = self.count
         for c in self.var.keys():
-            self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (
-                self.count[c] + 1e-8
-            )
+            self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (self.count[c] + 1e-8)
 
         # resetting for next epoch
         self.count = torch.zeros(self.n_classes)  # count for class
-        self.features = {
-            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
-        }
+        self.features = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
         self.ex = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-        self.ex2 = {
-            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
-        }
+        self.ex2 = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
 
         return self.previous_features, self.var
 
@@ -181,14 +165,16 @@ class OWLoss(nn.Module):
         return mav_tensor
 
 
+# This is training the model to do anomaly segmentation - it is being trained to differentiate between known and unknown classes
 class ObjectosphereLoss(nn.Module):
-    def __init__(self, sigma=1.0):
+    def __init__(self, sigma=1.0, void_label=-1):
         super().__init__()
         self.sigma = sigma
+        self.void_label = void_label
 
-    def forward(self, logits, sem_gt):
-        logits_unk = logits.permute(0, 2, 3, 1)[torch.where(sem_gt == 255)]
-        logits_kn = logits.permute(0, 2, 3, 1)[torch.where(sem_gt != 255)]
+    def forward(self, logits, sem_gt): # 0,1,2,3, 0, 2, 3, 1 B, C, H, W -> B, H, W, C
+        logits_unk = logits.permute(0, 2, 3, 1)[torch.where(sem_gt == self.void_label)]
+        logits_kn = logits.permute(0, 2, 3, 1)[torch.where(sem_gt != self.void_label)]
 
         if len(logits_unk):
             loss_unk = torch.linalg.norm(logits_unk, dim=1).mean()
@@ -204,85 +190,80 @@ class ObjectosphereLoss(nn.Module):
 
 
 class CrossEntropyLoss2d(nn.Module):
-    def __init__(self, device, weight):
+    def __init__(self, device, weight, void_label=-1):
         super(CrossEntropyLoss2d, self).__init__()
+        self.void_label = void_label
         self.weight = torch.tensor(weight).to(device)
         self.num_classes = len(self.weight) + 1  # +1 for void
-        if self.num_classes < 2**8:
-            self.dtype = torch.uint8
-        else:
-            self.dtype = torch.int16
-        self.ce_loss = nn.CrossEntropyLoss(
-            torch.from_numpy(np.array(weight)).float(),
-            reduction="none",
-            ignore_index=-1,
-        )
+        # if self.num_classes < 2**8:
+        #     self.dtype = torch.uint8
+        # else:
+        #     self.dtype = torch.int16
+        # IMPORTANT: ignore index -1 (the void)
+        self.ce_loss = nn.CrossEntropyLoss(torch.from_numpy(np.array(weight)).float(), reduction="none", ignore_index=void_label)
         self.ce_loss.to(device)
 
     def forward(self, inputs, targets):
-        losses = []
-        targets_m = targets.clone()
-        if targets_m.sum() == 0:
-            import ipdb;ipdb.set_trace()  # fmt: skip
-        targets_m -= 1
-        loss_all = self.ce_loss(inputs, targets_m.long())
-        number_of_pixels_per_class = torch.bincount(
-            targets.flatten().type(self.dtype), minlength=self.num_classes
-        )
-        divisor_weighted_pixel_sum = torch.sum(
-            number_of_pixels_per_class[1:] * self.weight
-        )  # without void
-        if divisor_weighted_pixel_sum > 0:
-            losses.append(torch.sum(loss_all) / divisor_weighted_pixel_sum)
-        else:
-            losses.append(torch.tensor(0.0).cuda())
+        # targets_m = targets.clone()
+        if (targets == -1).all(): # i.e. if all labels are void (-1)
+            return [torch.tensor(0.0).cuda()]
+            # import ipdb;ipdb.set_trace()  # fmt: skip
+        # targets_m -= 1
+        # assert (targets - 1 >= 0).all()
+        # print("(targets-1).unique", (targets-1).unique())
+        # print("inputs.shape", inputs.shape)
+        # print(targets)
+        # print(inputs)
+        loss_all = self.ce_loss(inputs, targets.long())
+        # if (self.weight == 1).all():
+        divisor_weighted_pixel_sum = (targets >= 0).sum()
+        # else:
+            # number_of_pixels_per_class = torch.bincount(targets.flatten() - 1, minlength=self.num_classes)
+            # divisor_weighted_pixel_sum = torch.sum(number_of_pixels_per_class[1:] * self.weight) # without void
 
-        return losses
+        return [torch.sum(loss_all) / divisor_weighted_pixel_sum]
 
 
 class CrossEntropyLoss2dForValidData:
-    def __init__(self, device, weight, weighted_pixel_sum):
+    def __init__(self, device, weight, weighted_pixel_sum, void_label=-1):
         super(CrossEntropyLoss2dForValidData, self).__init__()
-        self.ce_loss = nn.CrossEntropyLoss(
-            torch.from_numpy(np.array(weight)).float(), reduction="sum", ignore_index=-1
-        )
+        self.ce_loss = nn.CrossEntropyLoss(torch.from_numpy(np.array(weight)).float(), reduction="sum", ignore_index=void_label)
         self.ce_loss.to(device)
         self.weighted_pixel_sum = weighted_pixel_sum
         self.total_loss = 0
 
     def add_loss_of_batch(self, inputs, targets):
-        targets_m = targets.clone()
-        targets_m -= 1
-        loss = self.ce_loss(inputs, targets_m.long())
+        # targets_m = targets.clone()
+        # targets_m -= 1
+        loss = self.ce_loss(inputs, targets.long())
         self.total_loss += loss
 
     def compute_whole_loss(self):
-        return self.total_loss.cpu().numpy().item() / self.weighted_pixel_sum.item()
+        return self.total_loss.detach().cpu().numpy().item() / self.weighted_pixel_sum.item()
 
     def reset_loss(self):
         self.total_loss = 0
 
 
 class CrossEntropyLoss2dForValidDataUnweighted:
-    def __init__(self, device):
+    def __init__(self, device, void_label=-1):
         super(CrossEntropyLoss2dForValidDataUnweighted, self).__init__()
-        self.ce_loss = nn.CrossEntropyLoss(
-            weight=None, reduction="sum", ignore_index=-1
-        )
+        self.ce_loss = nn.CrossEntropyLoss(weight=None, reduction="sum", ignore_index=void_label)
         self.ce_loss.to(device)
         self.nr_pixels = 0
         self.total_loss = 0
 
     def add_loss_of_batch(self, inputs, targets):
-        targets_m = targets.clone()
-        targets_m -= 1
-        loss = self.ce_loss(inputs, targets_m.long())
+        # targets_m = targets.clone()
+        # targets_m -= 1
+        loss = self.ce_loss(inputs, targets)
         self.total_loss += loss
-        self.nr_pixels += torch.sum(targets_m >= 0)  # only non void pixels
+        self.nr_pixels += torch.sum(targets >= 0) # only non void pixels
 
     def compute_whole_loss(self):
         return (
-            self.total_loss.cpu().numpy().item() / self.nr_pixels.cpu().numpy().item()
+            self.total_loss.detach().cpu().numpy().item()
+            / self.nr_pixels.detach().cpu().numpy().item()
         )
 
     def reset_loss(self):

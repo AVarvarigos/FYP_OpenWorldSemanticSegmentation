@@ -237,6 +237,12 @@ class ArgumentParser(argparse.ArgumentParser):
             "neighbor interpolation and a 3x3 conv "
             "afterwards",
         )
+        self.add_argument(
+            "--tru_for",
+            default=False,
+            type=bool,
+            help="use tru for decoder",
+        )
 
         # dataset
         self.add_argument(

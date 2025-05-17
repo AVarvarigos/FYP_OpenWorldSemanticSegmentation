@@ -269,29 +269,29 @@ def train_one_epoch(
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
-        sample["label"] = sample["label"] - 1
+        sample["label"] = sample["label"] - 2
         label_ss = sample["label"].clone().cuda()
-        label_ss[label_ss == 255] = 0
-        target_scales = label_ss
+        # label_ss[label_ss == 255] = 0
+        # target_scales = label_ss
 
         for param in model.parameters():
             param.grad = None
 
         # forward pass
         pred_scales, ow_res = model(image)
-        cw_target = target_scales.clone()
-        # cw_target[cw_target > 16] = 255
+        cw_target = label_ss.clone()
+        # cw_target[cw_target > 15] = -1
         losses = loss_function_train(pred_scales, cw_target)
         loss_segmentation = sum(losses)
         loss_objectosphere = torch.tensor(0.0)
         loss_ows = torch.tensor(0.0)
         loss_con = torch.tensor(0.0)
         total_loss = 0.9 * loss_segmentation
-        label = sample["label"].long().cuda() - 2
-        label[label < 0] = 255
+        label = sample["label"].long().cuda()
+        # label[label < 0] = 255
 
         if loss_obj is not None:
-            label_ow = label.clone().cuda().to(torch.uint8)
+            label_ow = label.clone().cuda()
             loss_objectosphere = loss_obj(ow_res, label_ow)
             total_loss += 0.5 * loss_objectosphere
         if loss_mav is not None:
@@ -421,31 +421,35 @@ def validate(
             if not device.type == "cpu":
                 torch.cuda.synchronize()
 
-            target = sample["label"].long().cuda() - 2
-            target[target == -1] = 255
-            compute_iou.update(prediction_ss, target.cuda())
+            sample["label"] = sample["label"].long().cuda() - 2
+            target = sample["label"].clone().cuda()
+            target_iou = sample["label"].clone().cuda()
+            target_iou[target_iou == -1] = 255
+            compute_iou.update(prediction_ss, target_iou.cuda())
 
 
-            if epoch % 5 == 0:
-                plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes)
+            if epoch % 3 == 0 and i == 0 and plot_results:
+                plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None)
 
             # compute valid loss
             loss_function_valid.add_loss_of_batch(
-                prediction_ss, sample["label"].to(device) - 1
+                prediction_ss, sample["label"].to(device)
             )
 
             loss_objectosphere = torch.tensor(0)
             loss_ows = torch.tensor(0)
             loss_con = torch.tensor(0)
             if loss_obj is not None:
-                target_obj = sample["label"] - 1
-                target_obj[target_obj == 16] = 255
-                target_obj[target_obj == 17] = 255
-                target_obj[target_obj == 18] = 255
-                loss_objectosphere = loss_obj(prediction_ow, sample["label"] - 1)
+                # CityScapes uses all classes
+                # BDDAnomoly does not use 16-18
+                # target_obj = sample["label"].clone().cuda()
+                # target_obj[target_obj == 16] = -1
+                # target_obj[target_obj == 17] = -1
+                # target_obj[target_obj == 18] = -1
+                loss_objectosphere = loss_obj(prediction_ow, target)
             total_loss_obj.append(loss_objectosphere.cpu().detach().numpy())
             if loss_mav is not None:
-                loss_ows = loss_mav(prediction_ss, target.cuda(), is_train=False)
+                loss_ows = loss_mav(prediction_ss, target, is_train=False)
             total_loss_mav.append(loss_ows.cpu().detach().numpy())
             if loss_contrastive is not None:
                 loss_con = loss_contrastive(mavs, prediction_ow, target, epoch)
@@ -589,11 +593,13 @@ def plot_metrics(metric_data, metric_name, epochs, save_path):
 def plot_images(
     epoch, sample, image, mavs, var, prediction_ss,
     prediction_ow, target, classes,
-    plot_path='./plots'
+    plot_path='./plots', use_mav=True
 ):
     # if plot_results and i < 1:  # Limit to first 8 samples for visualization
     # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
     fig, axes = plt.subplots(9, 5, figsize=(16, 24))  # One extra row for column names
+
+    var = {k: v.detach().clone() for k, v in var.items()}
 
     # Add column names in the first row
     column_names = ["Image", "Prediction (SS)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
@@ -602,6 +608,18 @@ def plot_images(
             0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
         )
         axes[0, col_idx].axis("off")  # Turn off axes for header
+
+    ows_target = target.clone().cpu().numpy()
+    ows_target[ows_target == -1] = 255
+    ows_target [ows_target < classes] = 0
+
+    if use_mav:
+        s_cont = contrastive_inference(prediction_ow)
+        s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
+        s_sem = s_sem.cuda()
+        s_unk = (s_cont + s_sem) / 2
+        pred_ow = 255*(s_unk - 0.6).relu().bool().int()
+        pred_ow_np = pred_ow.cpu().numpy()
 
     # Add images in the subsequent rows
     for idx in range(8):  # Limit to 8 rows of images
@@ -617,31 +635,41 @@ def plot_images(
 
         # Process prediction_ow (open-world segmentation prediction)
         # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
-        ows_target = target.long() - 1
-        ows_target[ows_target < classes] = 0
-        ows_binary_gt = 255*ows_target.bool().long()
-        ows_binary_gt = ows_binary_gt[idx].detach().cpu().numpy()
-        s_cont = contrastive_inference(prediction_ow)
-        s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
-        s_sem = s_sem.to("cuda")
-        s_unk = (s_cont + s_sem) / 2
-        pred_ow_np = 255*(s_unk - 0.6).relu().bool().int()
-        pred_ow_np = pred_ow_np[idx].detach().cpu().numpy()
+        target_copy = target.clone().cpu().numpy()
+        target_copy += 1
 
         # Process the ground truth
-        target_np = target[idx].detach().cpu().numpy()
+        target_np = target_copy[idx]
+
+        target_c = np.zeros((*target_np.shape, 3), dtype=np.uint8)
+        colors = generate_distinct_colors(classes)
+
+        for i in range(1, classes+1):
+            target_c[target_np == i] = colors[i-1]
+        target_c = target_c.astype(np.uint8)
+
+        pred_ss_np_c = np.zeros_like(target_c)
+        for i in range(1, classes+1):
+            pred_ss_np_c[pred_ss_np == i] = colors[i-1]
+        pred_ss_np_c = pred_ss_np_c.astype(np.uint8)
+
+        ows_binary_gt = ows_target[idx]
+
+        if use_mav:
+            pred_ow_np_i = pred_ow_np[idx]
 
         # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
         axes[idx + 1, 0].imshow(image_np)
         axes[idx + 1, 0].axis("off")
 
-        axes[idx + 1, 1].imshow(pred_ss_np)
+        axes[idx + 1, 1].imshow(pred_ss_np_c)
         axes[idx + 1, 1].axis("off")
 
-        axes[idx + 1, 2].imshow(pred_ow_np)
-        axes[idx + 1, 2].axis("off")
+        if use_mav:
+            axes[idx + 1, 2].imshow(pred_ow_np_i)
+            axes[idx + 1, 2].axis("off")
 
-        axes[idx + 1, 3].imshow(target_np)
+        axes[idx + 1, 3].imshow(target_c)
         axes[idx + 1, 3].axis("off")
 
         axes[idx + 1, 4].imshow(ows_binary_gt)
@@ -656,6 +684,18 @@ def plot_images(
     # Save the plot
     plt.savefig(full_plot_path, bbox_inches="tight")
     plt.close(fig)
+
+import colorsys
+
+def generate_distinct_colors(n):
+    colors = []
+    for i in range(n):
+        # Generate a color in HSV space and convert it to RGB
+        hue = i / n  # equally spaced hue values
+        rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)  # full saturation and value
+        rgb = [int(c * 255) for c in rgb]  # Convert to 0-255 range
+        colors.append(rgb)
+    return colors
 
 
 def contrastive_inference(predictions, radius=1.0):

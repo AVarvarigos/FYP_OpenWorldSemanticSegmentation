@@ -35,6 +35,7 @@ class OWLoss(nn.Module):
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
         sem_pred = torch.argmax(torch.softmax(logits, dim=1), dim=1)
         gt_labels = torch.unique(sem_gt).tolist()
+        # 0,1,2,3, 0, 2, 3, 1 B, C, H, W -> B, H, W, C
         logits_permuted = logits.permute(0, 2, 3, 1)
         for label in gt_labels:
             if label == self.void_label:
@@ -57,7 +58,7 @@ class OWLoss(nn.Module):
             self.count[label] += n_tps
             self.features[label] /= self.count[label] + 1e-8
 
-    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: torch.bool) -> torch.Tensor:
+    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: bool) -> torch.Tensor:
         if is_train:
             # update mav only at training time
             sem_gt = sem_gt#.type(torch.uint8)

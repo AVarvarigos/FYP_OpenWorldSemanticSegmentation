@@ -142,10 +142,10 @@ class DatasetBase(abc.ABC, Dataset):
 
         class_weighting_filepath += f"_{self.split}.pickle"
 
-        # if os.path.exists(class_weighting_filepath):
-        #     class_weighting = pickle.load(open(class_weighting_filepath, "rb"))
-        #     print(f"Using {class_weighting_filepath} as class weighting")
-        #     return class_weighting
+        if os.path.exists(class_weighting_filepath):
+            class_weighting = pickle.load(open(class_weighting_filepath, "rb"))
+            print(f"Using {class_weighting_filepath} as class weighting")
+            return class_weighting
 
         print("Compute class weights")
 
@@ -153,7 +153,6 @@ class DatasetBase(abc.ABC, Dataset):
         n_image_pixels_with_class = np.zeros(self.n_classes)
         for i in range(len(self)):
             label = self.load_label(i) - 1
-            label[label == 19] = 16
             h, w = label.shape
             current_dist = np.bincount(label.flatten(), minlength=self.n_classes)
             n_pixels_per_class += current_dist
