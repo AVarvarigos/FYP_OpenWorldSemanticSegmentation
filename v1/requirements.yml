@@ -342,4 +342,3 @@ dependencies:
     - xmltodict==0.13.0
     - yacs==0.1.8
     - yapf==0.32.0
-prefix: /home/matteo/anaconda3/envs/openworld
