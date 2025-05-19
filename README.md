@@ -1,42 +1,37 @@
-# Open-World-Semantic-Segmentation-Including-Class-Similarity
-FYP
--Paper can be found here: https://www.ipb.uni-bonn.de/wp-content/papercite-data/pdf/sodano2024cvpr.pdf
+### Objective & Goals of Research
+In this project, we aim to improve on Open-World Segmentation (OWS) on Cityscapes dataset and BDDAnomaally dataset.
 
--Set up Environment
-Download dependencies:
-conda env create -f requirements.yml 
-conda active
+We will be building on the work of _[Sodano et al.](https://arxiv.org/pdf/2403.07532)_.
 
--Download Dataset Cityscapes 
-https://www.cityscapes-dataset.com/downloads/
+### Original Model
+We implement the Encoder-Decoder architecture defined in the ContMAV paper. We initially use ResNet34 and train our model for 500 epochs using a learning rate of 0.004, as in the paper, on CityScapes Dataset.
+The cityscapes data is a large dataset of street-level images with pixel-level annotations for 19 classes. The dataset is split into training, validation, and test sets.
 
-src/
-├── __init__.py
-├── args.py
-├── build_model.py
-├── contrastive_loss.py
-├── prepare_data.py
-├── preprocessing.py
-├── utils.py
-├── datasets/
-│   ├── __init__.py
-│   ├── dataset_base.py
-│   └── cityscapes/
-│       ├── __init__.py
-│       ├── cityscapes.py
-│       ├── prepare_dataset.py
-│       ├── pytorch_dataset.py
-│       ├── requirements.txt
-│       ├── weighting_linear_1+16_val.pickle
-│       ├── weighting_linear_1+17_val.pickle
-│       ├── weighting_linear_1+19_val.pickle
-│       └── weighting_median_frequency_1+19_train.pickle
-└── models/
-    ├── __init__.py
-    ├── model.py
-    └── resnet.py
-    ├── decoder.py
-    ├── neck.py
-    └── resnet.py
-├── trained_models/imagnet/
-│   ├── r34_NBt1D.pth
+### Tru For
+We aim to improve the performance of the model by using a different architecture. We add an additional decoder to the model from [Guillaro et al.](https://arxiv.org/pdf/2212.10957) to the model and combine the logits from both decoders.
+
+### Different Loss Functions
+We also try using different loss functions:
+- Focal Loss
+- Focal Loss with Dice Loss
+- Infonce Loss for Ananomaly Detection
+
+### Infonce Loss
+We separate crops from the image, extracting the known and unknown classes. We then use the Infonce loss to train the model to distinguish between the known and unknown classes. The Infonce loss is defined as:
+```python
+def infonce_loss(known, unknown):
+    known = F.normalize(known, dim=1)
+    unknown = F.normalize(unknown, dim=1)
+    logits = torch.mm(known, unknown.t())
+    labels = torch.arange(logits.size(0)).to(logits.device)
+    loss = F.cross_entropy(logits, labels)
+    return loss
+```
+This method allows for the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task. Especially since the samples of unknown classes are usually not balanced.
+
+### Synco
+From the synco paper, we utilise the idea of generating hard negatives from the known classes. 
+
+Which is better?:
+- We use the known classes to generate hard negatives for the unknown classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
+- We also use the unknown classes to generate hard negatives for the known classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
