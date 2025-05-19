@@ -9,6 +9,7 @@
 
 import os
 import sys
+import json
 
 import pandas as pd
 import numpy as np
@@ -92,6 +93,7 @@ class OWLoss(nn.Module):
 
         self.previous_features = None
         self.previous_count = None
+        # self.epoch = 0
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
@@ -114,6 +116,7 @@ class OWLoss(nn.Module):
             # features is running mean for mav
             self.features[label] = (self.features[label] * self.count[label] + avg_mav * n_tps)
 
+            # Logits by class for true positive labels
             self.ex[label] += (logits_tps).sum(dim=0)
             self.ex2[label] += ((logits_tps) ** 2).sum(dim=0)
             self.count[label] += n_tps
@@ -132,12 +135,15 @@ class OWLoss(nn.Module):
 
         acc_loss = torch.tensor(0.0).cuda()
         for label in gt_labels[1:]:
+            var_selection = self.var[label] > 1e-4
+            if var_selection.sum() == 0:
+                continue
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
             if self.previous_count[label] > 0:
                 ew_l1 = self.criterion(logs, mav)
-                ew_l1 = ew_l1 / (self.var[label] + 1e-8)
+                ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
                 if self.hinged:
                     ew_l1 = F.relu(ew_l1 - self.delta).sum(dim=1)
                 acc_loss += ew_l1.mean()
@@ -149,6 +155,21 @@ class OWLoss(nn.Module):
         self.previous_count = self.count
         for c in self.var.keys():
             self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (self.count[c] + 1e-8)
+            # # Save to file with json
+            # with open(f"monitor/var_{self.epoch}.json", "w") as f:
+            #     var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
+            #     json.dump(var_to_save, f)
+            # with open(f"monitor/ex2_{self.epoch}.json", "w") as f:
+            #     ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
+            #     json.dump(ex2_to_save, f)
+            # with open(f"monitor/ex_{self.epoch}.json", "w") as f:
+            #     ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
+            #     json.dump(ex_to_save, f)
+            # with open(f"monitor/count_{self.epoch}.json", "w") as f:
+            #     count_to_save = self.count.cpu().numpy().tolist()
+            #     json.dump(count_to_save, f)
+
+        # self.epoch += 1
 
         # resetting for next epoch
         self.count = torch.zeros(self.n_classes)  # count for class
@@ -177,11 +198,11 @@ class ObjectosphereLoss(nn.Module):
         logits_kn = logits.permute(0, 2, 3, 1)[torch.where(sem_gt != self.void_label)]
 
         if len(logits_unk):
-            loss_unk = torch.linalg.norm(logits_unk, dim=1).mean()
+            loss_unk = (torch.linalg.norm(logits_unk, dim=1)**2).mean()
         else:
             loss_unk = torch.tensor(0)
         if len(logits_kn):
-            loss_kn = F.relu(self.sigma - torch.linalg.norm(logits_kn, dim=1)).mean()
+            loss_kn = F.relu(self.sigma - (torch.linalg.norm(logits_kn, dim=1)**2)).mean()
         else:
             loss_kn = torch.tensor(0)
 
