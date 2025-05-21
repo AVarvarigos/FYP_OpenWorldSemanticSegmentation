@@ -64,6 +64,12 @@ class ArgumentParser(argparse.ArgumentParser):
             "useful when using a pretrained "
             "model on scenenet.",
         )
+        self.add_argument(
+            "--freeze_encoder",
+            default=True,
+            type=bool,
+            help="Wether the encoder should be frozen"
+        )
 
         # input dimensions
         self.add_argument(
@@ -288,6 +294,18 @@ class ArgumentParser(argparse.ArgumentParser):
             default=False,
             type=bool,
             help="use the objectosphere loss",
+        )
+        self.add_argument(
+            "--dice",
+            default=False,
+            type=bool,
+            help="use the dice loss",
+        )
+        self.add_argument(
+            "--focal",
+            default=False,
+            type=bool,
+            help="use the focal loss",
         )
         self.add_argument(
             "--mav",

@@ -93,7 +93,7 @@ class OWLoss(nn.Module):
 
         self.previous_features = None
         self.previous_count = None
-        # self.epoch = 0
+        self.epoch = 0
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
@@ -122,7 +122,7 @@ class OWLoss(nn.Module):
             self.count[label] += n_tps
             self.features[label] /= self.count[label] + 1e-8
 
-    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: torch.bool) -> torch.Tensor:
+    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: bool) -> torch.Tensor:
         if is_train:
             # update mav only at training time
             sem_gt = sem_gt#.type(torch.uint8)
@@ -155,21 +155,21 @@ class OWLoss(nn.Module):
         self.previous_count = self.count
         for c in self.var.keys():
             self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (self.count[c] + 1e-8)
-            # # Save to file with json
-            # with open(f"monitor/var_{self.epoch}.json", "w") as f:
-            #     var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
-            #     json.dump(var_to_save, f)
-            # with open(f"monitor/ex2_{self.epoch}.json", "w") as f:
-            #     ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
-            #     json.dump(ex2_to_save, f)
-            # with open(f"monitor/ex_{self.epoch}.json", "w") as f:
-            #     ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
-            #     json.dump(ex_to_save, f)
-            # with open(f"monitor/count_{self.epoch}.json", "w") as f:
-            #     count_to_save = self.count.cpu().numpy().tolist()
-            #     json.dump(count_to_save, f)
+            # Save to file with json
+            with open(f"monitor/var_{self.epoch}.json", "w") as f:
+                var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
+                json.dump(var_to_save, f)
+            with open(f"monitor/ex2_{self.epoch}.json", "w") as f:
+                ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
+                json.dump(ex2_to_save, f)
+            with open(f"monitor/ex_{self.epoch}.json", "w") as f:
+                ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
+                json.dump(ex_to_save, f)
+            with open(f"monitor/count_{self.epoch}.json", "w") as f:
+                count_to_save = self.count.cpu().numpy().tolist()
+                json.dump(count_to_save, f)
 
-        # self.epoch += 1
+        self.epoch += 1
 
         # resetting for next epoch
         self.count = torch.zeros(self.n_classes)  # count for class

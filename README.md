@@ -35,3 +35,9 @@ From the synco paper, we utilise the idea of generating hard negatives from the 
 Which is better?:
 - We use the known classes to generate hard negatives for the unknown classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
 - We also use the unknown classes to generate hard negatives for the known classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
+
+### Tasks
+- Add New losses for decoder including Focal Loss, Focal Loss with Dice Loss DONE
+- Preprocess images to create a Dataset of known and unknown classes. All images should be of the same size
+- Retraing encoder with Infonce loss
+- Add hard negative sampling methods introduces in Synco
