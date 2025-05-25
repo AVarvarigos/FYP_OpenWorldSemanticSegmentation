@@ -8,10 +8,9 @@
 
 
 import os
-import glob
 
-import numpy as np
 import cv2
+import numpy as np
 
 from ..dataset_base import DatasetBase
 from .cityscapes import CityscapesBase
@@ -53,7 +52,7 @@ class Cityscapes(CityscapesBase, DatasetBase):
                 filepath = os.path.join(self._data_dir, filename)
                 assert os.path.exists(filepath)
                 paths = []
-                with open(filepath, 'r') as f:
+                with open(filepath, "r") as f:
                     paths = f.read().split()
                 result = []
                 for p in paths:
@@ -63,12 +62,17 @@ class Cityscapes(CityscapesBase, DatasetBase):
                 return result
 
             self._files = {
-                "rgb": _loadtxt(f"{self._split}_rgb.txt", os.path.join(self._split, 'rgb')),
-                "label": _loadtxt(f"{self._split}_labels_{self._n_classes}.txt", os.path.join(self._split, f'labels_{self._n_classes}')),
+                "rgb": _loadtxt(
+                    f"{self._split}_rgb.txt", os.path.join(self._split, "rgb")
+                ),
+                "label": _loadtxt(
+                    f"{self._split}_labels_{self._n_classes}.txt",
+                    os.path.join(self._split, f"labels_{self._n_classes}"),
+                ),
             }
             assert all(len(l) == len(self._files["rgb"]) for l in self._files.values())
-            self.images = self._files['rgb']
-            self.labels = self._files['label']
+            self.images = self._files["rgb"]
+            self.labels = self._files["label"]
 
             # for filename in glob.iglob(self.images_path + "/**/*.*", recursive=True):
             #     self.images.append(filename)

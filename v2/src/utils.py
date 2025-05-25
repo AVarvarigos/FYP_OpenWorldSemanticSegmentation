@@ -135,15 +135,16 @@ class OWLoss(nn.Module):
 
         acc_loss = torch.tensor(0.0).cuda()
         for label in gt_labels[1:]:
-            var_selection = self.var[label] > 1e-4
-            if var_selection.sum() == 0:
-                continue
+            # var_selection = self.var[label] > 1e-5
+            # if var_selection.sum() == 0:
+            #     continue
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
             if self.previous_count[label] > 0:
                 ew_l1 = self.criterion(logs, mav)
-                ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
+                # ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
+                ew_l1 = ew_l1 / (self.var[label] + 1e-8)
                 if self.hinged:
                     ew_l1 = F.relu(ew_l1 - self.delta).sum(dim=1)
                 acc_loss += ew_l1.mean()
@@ -226,7 +227,7 @@ class CrossEntropyLoss2d(nn.Module):
 
     def forward(self, inputs, targets):
         # targets_m = targets.clone()
-        if (targets == -1).all(): # i.e. if all labels are void (-1)
+        if (targets == self.void_label).all(): # i.e. if all labels are void (-1)
             return [torch.tensor(0.0).cuda()]
             # import ipdb;ipdb.set_trace()  # fmt: skip
         # targets_m -= 1

@@ -7,35 +7,29 @@
 ########################################################
 
 import argparse
-from datetime import datetime
 import json
 import os
-import copy
+import pickle
 import sys
 import time
-import warnings
+from datetime import datetime
+import colorsys
+
 import matplotlib.pyplot as plt
-import wandb
-import pickle
-
 import numpy as np
-from tqdm import tqdm
-
 import torch
-from torch.functional import F
-from torch.utils.tensorboard import SummaryWriter
 import torch.optim
-from torch.optim.lr_scheduler import OneCycleLR
+from sklearn.cluster import AgglomerativeClustering as ac
+from src import losses, utils
 from src.args import ArgumentParser
 from src.build_model import build_model
-from src import utils, losses
 from src.prepare_data import prepare_data
-from src.utils import save_ckpt_every_epoch
-from src.utils import load_ckpt
-from src.utils import print_log
-
-from sklearn.cluster import AgglomerativeClustering as ac
+from src.utils import load_ckpt, print_log, save_ckpt_every_epoch
+from torch.functional import F
+from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
+from tqdm import tqdm
 
 import wandb
 
@@ -53,6 +47,7 @@ def parse_args():
     # The provided learning rate refers to the default batch size of 8.
     # When using different batch sizes we need to adjust the learning rate
     # accordingly:
+    args.batch_size_valid = args.batch_size
     if args.batch_size != 8:
         args.lr = args.lr * args.batch_size / 8
         print(
@@ -103,12 +98,6 @@ def train_main():
         print("Freeze everything but the output layer(s).")
         for name, param in model.named_parameters():
             if "out" not in name:
-                param.requires_grad = False
-    
-    if args.freeze_encoder:
-        print("Freeze encoder layers.")
-        for name, param in model.named_parameters():
-            if "encoder" in name:
                 param.requires_grad = False
 
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
@@ -285,6 +274,9 @@ def train_one_epoch(
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
+        # TODO: wt is dis?
+        # label = sample["label"].long().cuda() - 1
+        # label[label < 0] = 255
         sample["label"] = sample["label"] - 2
         label_ss = sample["label"].clone().cuda()
         # label_ss[label_ss == 255] = 0
@@ -653,14 +645,14 @@ def plot_images(
 
     ows_target = target.clone().cpu().numpy()
     ows_target[ows_target == -1] = 255
-    ows_target [ows_target < classes] = 0
+    ows_target[ows_target < classes] = 0
 
     if use_mav:
         s_cont = contrastive_inference(prediction_ow)
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
         s_unk = (s_cont + s_sem) / 2
-        pred_ow = 255*(s_unk - 0.6).relu().bool().int()
+        pred_ow = 255 * (s_unk - 0.6).relu().bool().int()
         pred_ow_np = pred_ow.cpu().numpy()
 
     # Add images in the subsequent rows
@@ -673,12 +665,16 @@ def plot_images(
         image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
 
         # Process prediction_ss (semantic segmentation prediction)
-        pred_ss_np = torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0).detach().cpu().numpy()
+        pred_ss_np = (
+            torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0)
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
         # Process prediction_ow (open-world segmentation prediction)
         # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
         target_copy = target.clone().cpu().numpy()
-        target_copy += 1
 
         # Process the ground truth
         target_np = target_copy[idx]
@@ -686,13 +682,13 @@ def plot_images(
         target_c = np.zeros((*target_np.shape, 3), dtype=np.uint8)
         colors = generate_distinct_colors(classes)
 
-        for i in range(1, classes+1):
-            target_c[target_np == i] = colors[i-1]
+        for i in range(classes):
+            target_c[target_np == i] = colors[i]
         target_c = target_c.astype(np.uint8)
 
         pred_ss_np_c = np.zeros_like(target_c)
-        for i in range(1, classes+1):
-            pred_ss_np_c[pred_ss_np == i] = colors[i-1]
+        for i in range(classes):
+            pred_ss_np_c[pred_ss_np == i] = colors[i]
         pred_ss_np_c = pred_ss_np_c.astype(np.uint8)
 
         ows_binary_gt = ows_target[idx]
@@ -727,7 +723,6 @@ def plot_images(
     plt.savefig(full_plot_path, bbox_inches="tight")
     plt.close(fig)
 
-import colorsys
 
 def generate_distinct_colors(n):
     colors = []
@@ -785,4 +780,29 @@ def get_optimizer(args, model):
 
 
 if __name__ == "__main__":
+    # sys.argv = [
+    #     "train.py",
+    #     "--id",
+    #     "someid",
+    #     "--dataset_dir",
+    #     "/workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes",
+    #     "--num_classes",
+    #     "19",
+    #     "--batch_size",
+    #     "20",
+    #     "--pretrained_dir",
+    #     "/workspace/Models/resnet34NonBottleneck1D",
+    #     "--loss_weights",
+    #     "1,1,1,1",
+    #     "--workers",
+    #     "20",
+    #     "--encoder",
+    #     "resnet34",
+    #     "--encoder_block",
+    #     "NonBottleneck1D",
+    #     "--plot_results",
+    #     "true",
+    #     "--lr",
+    #     "4e-3",
+    # ]
     train_main()

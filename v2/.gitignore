@@ -8,3 +8,4 @@ wandb/
 src/ContMav.weights
 plots/
 output/
+monitor/

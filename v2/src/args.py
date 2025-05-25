@@ -64,12 +64,6 @@ class ArgumentParser(argparse.ArgumentParser):
             "useful when using a pretrained "
             "model on scenenet.",
         )
-        self.add_argument(
-            "--freeze_encoder",
-            default=True,
-            type=bool,
-            help="Wether the encoder should be frozen"
-        )
 
         # input dimensions
         self.add_argument(

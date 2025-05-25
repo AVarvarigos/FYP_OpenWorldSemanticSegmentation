@@ -243,3 +243,25 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+if __name__ == "__main__":
+    
+    def count_parameters_in_millions(model):
+        total_params = sum(p.numel() for p in model.parameters())
+        return total_params / 1_000_000 
+    
+    model = OWSNetwork()
+    print(f'Total number of parameters: {count_parameters_in_millions(model):.2f}M')
+
+    model.eval()
+    image = torch.randn(1, 3, 480, 640)
+
+    from torch.autograd import Variable
+
+    image = Variable(image)
+    with torch.no_grad():
+        output = model(image)
+        
+    print(f'Input tensor shape: {image.shape}')
+    print(f'Output (semantic) tensor shape: {output[0].shape}')
+    print(f'Output (anomaly) tensor shape: {output[1].shape}')
