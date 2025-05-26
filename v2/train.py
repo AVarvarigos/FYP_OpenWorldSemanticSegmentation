@@ -7,35 +7,29 @@
 ########################################################
 
 import argparse
-from datetime import datetime
 import json
 import os
-import copy
+import pickle
 import sys
 import time
-import warnings
+from datetime import datetime
+import colorsys
+
 import matplotlib.pyplot as plt
-import wandb
-import pickle
-
 import numpy as np
-from tqdm import tqdm
-
 import torch
-from torch.functional import F
-from torch.utils.tensorboard import SummaryWriter
 import torch.optim
-from torch.optim.lr_scheduler import OneCycleLR
+from sklearn.cluster import AgglomerativeClustering as ac
+from src import losses, utils
 from src.args import ArgumentParser
 from src.build_model import build_model
-from src import utils
 from src.prepare_data import prepare_data
-from src.utils import save_ckpt_every_epoch
-from src.utils import load_ckpt
-from src.utils import print_log
-
-from sklearn.cluster import AgglomerativeClustering as ac
+from src.utils import load_ckpt, print_log, save_ckpt_every_epoch
+from torch.functional import F
+from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
+from tqdm import tqdm
 
 import wandb
 
@@ -53,6 +47,7 @@ def parse_args():
     # The provided learning rate refers to the default batch size of 8.
     # When using different batch sizes we need to adjust the learning rate
     # accordingly:
+    args.batch_size_valid = args.batch_size
     if args.batch_size != 8:
         args.lr = args.lr * args.batch_size / 8
         print(
@@ -99,11 +94,25 @@ def train_main():
         class_weighting = np.ones(n_classes_without_void)
     # model building -----------------------------------------------------------
     model, device = build_model(args, n_classes=n_classes_without_void)
+    
+    # Print initial model parameter info
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = count_trainable_parameters(model)
+    print(f"\n📊 MODEL PARAMETERS:")
+    print(f"   Total: {total_params/1_000_000:.2f}M parameters")
+    print(f"   Trainable: {trainable_params/1_000_000:.2f}M parameters ({100*trainable_params/total_params:.1f}%)")
+    
     if args.freeze > 0:
         print("Freeze everything but the output layer(s).")
         for name, param in model.named_parameters():
             if "out" not in name:
                 param.requires_grad = False
+
+        # Print parameters after freezing
+        trainable_after_freeze = count_trainable_parameters(model)
+        print(f"   After freezing: {trainable_after_freeze/1_000_000:.2f}M trainable parameters ({100*trainable_after_freeze/total_params:.1f}%)")
+        print(f"   Will unfreeze at epoch {args.freeze}")
+    print()
 
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
 
@@ -111,6 +120,8 @@ def train_main():
     loss_function_train = utils.CrossEntropyLoss2d(
         weight=class_weighting, device=device
     )
+    focal_loss = losses.FocalLoss()
+    dice_loss = losses.DiceLoss()
     loss_objectosphere = utils.ObjectosphereLoss()
     loss_mav = utils.OWLoss(n_classes=n_classes_without_void)
     loss_contrastive = utils.ContrastiveLoss(n_classes=n_classes_without_void)
@@ -125,8 +136,8 @@ def train_main():
         device=device,
     )
 
-    train_loss = [loss_function_train, loss_objectosphere, loss_mav, loss_contrastive]
-    val_loss = [loss_function_valid, loss_objectosphere, loss_mav, loss_contrastive]
+    train_loss = [loss_function_train, loss_objectosphere, loss_mav, loss_contrastive, focal_loss, dice_loss]
+    val_loss = [loss_function_valid, loss_objectosphere, loss_mav, loss_contrastive, focal_loss, dice_loss]
     if not args.obj:
         train_loss[1] = None
         val_loss[1] = None
@@ -136,6 +147,12 @@ def train_main():
     if not args.closs:
         train_loss[3] = None
         val_loss[3] = None
+    if not args.focal:
+        train_loss[4] = None
+        val_loss[4] = None
+    if not args.dice:
+        train_loss[5] = None
+        val_loss[5] = None
 
     optimizer = get_optimizer(args, model)
 
@@ -153,10 +170,12 @@ def train_main():
     # load checkpoint if parameter last_ckpt is provided
     if args.last_ckpt:
         ckpt_path = args.last_ckpt
-        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict = load_ckpt(
+        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss = load_ckpt(
             model, optimizer, ckpt_path, device
         )
         start_epoch = epoch_last_ckpt + 1
+        train_loss[2] = ows_loss
+        val_loss[2] = ows_loss
     else:
         start_epoch = 0
         best_miou = 0
@@ -250,7 +269,7 @@ def train_one_epoch(
     # set model to train mode
     model.train()
 
-    loss_function_train, loss_obj, loss_mav, loss_contrastive = train_loss
+    loss_function_train, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = train_loss
 
     # summed loss of all resolutions
     total_loss_list = []
@@ -258,6 +277,8 @@ def train_one_epoch(
     total_obj_loss = []
     total_ows_loss = []
     total_con_loss = []
+    total_focal_loss = []
+    total_dice_loss = []
 
     mavs = None
     if epoch and loss_contrastive is not None:
@@ -269,6 +290,9 @@ def train_one_epoch(
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
+        # TODO: wt is dis?
+        # label = sample["label"].long().cuda() - 1
+        # label[label < 0] = 255
         sample["label"] = sample["label"] - 2
         label_ss = sample["label"].clone().cuda()
         # label_ss[label_ss == 255] = 0
@@ -286,10 +310,18 @@ def train_one_epoch(
         loss_objectosphere = torch.tensor(0.0)
         loss_ows = torch.tensor(0.0)
         loss_con = torch.tensor(0.0)
+        i_loss_dice = torch.tensor(0.0)
+        i_loss_focal = torch.tensor(0.0)
         total_loss = 0.9 * loss_segmentation
         label = sample["label"].long().cuda()
         # label[label < 0] = 255
 
+        if loss_focal is not None:
+            i_loss_focal = loss_focal(pred_scales, label)
+            total_loss += 0.9 * i_loss_focal
+        if loss_dice is not None:
+            i_loss_dice = loss_dice(pred_scales, label)
+            total_loss += 0.5 * i_loss_dice
         if loss_obj is not None:
             label_ow = label.clone().cuda()
             loss_objectosphere = loss_obj(ow_res, label_ow)
@@ -311,12 +343,16 @@ def train_one_epoch(
         loss_objectosphere = loss_objectosphere.cpu().detach().numpy()
         loss_ows = loss_ows.cpu().detach().numpy()
         loss_con = loss_con.cpu().detach().numpy()
+        i_loss_dice = i_loss_dice.cpu().detach().numpy()
+        i_loss_focal = i_loss_focal.cpu().detach().numpy()
 
         total_loss_list.append(total_loss)
         total_sem_loss.append(loss_segmentation)
         total_obj_loss.append(loss_objectosphere)
         total_ows_loss.append(loss_ows)
         total_con_loss.append(loss_con)
+        total_focal_loss.append(i_loss_focal)
+        total_dice_loss.append(i_loss_dice)
 
         if np.isnan(total_loss):
             import ipdb;ipdb.set_trace()  # fmt: skip
@@ -348,6 +384,8 @@ def train_one_epoch(
     writer.add_scalar("Loss/objectosphere", np.mean(total_obj_loss), epoch)
     writer.add_scalar("Loss/ows", np.mean(total_ows_loss), epoch)
     writer.add_scalar("Loss/contrastive", np.mean(total_con_loss), epoch)
+    writer.add_scalar("Loss/focal", np.mean(total_focal_loss), epoch)
+    writer.add_scalar("Loss/dice", np.mean(total_dice_loss), epoch)
 
     if loss_mav is not None:
         mean, var = loss_mav.update()
@@ -384,7 +422,7 @@ def validate(
     miou = dict()
     ious = dict()
 
-    loss_function_valid, loss_obj, loss_mav, loss_contrastive = val_loss
+    loss_function_valid, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = val_loss
 
     # reset loss (of last validation) to zero
     loss_function_valid.reset_loss()
@@ -403,6 +441,8 @@ def validate(
     total_loss_obj = []
     total_loss_mav = []
     total_loss_con = []
+    total_loss_focal = []
+    total_loss_dice = []
     # validate each camera after another as all images of one camera have
     # the same resolution and can be resized together to the ground truth
     # segmentation size.
@@ -439,6 +479,14 @@ def validate(
             loss_objectosphere = torch.tensor(0)
             loss_ows = torch.tensor(0)
             loss_con = torch.tensor(0)
+            i_loss_dice = torch.tensor(0)
+            i_loss_focal = torch.tensor(0)
+            if loss_focal is not None:
+                i_loss_focal = loss_focal(prediction_ss, target)
+            total_loss_focal.append(i_loss_focal.cpu().detach().numpy())
+            if loss_dice is not None:
+                i_loss_dice = loss_dice(prediction_ss, target)
+            total_loss_dice.append(i_loss_dice.cpu().detach().numpy())
             if loss_obj is not None:
                 # CityScapes uses all classes
                 # BDDAnomoly does not use 16-18
@@ -467,6 +515,8 @@ def validate(
         + np.mean(total_loss_obj)
         + np.mean(total_loss_mav)
         + np.mean(total_loss_con)
+        + np.mean(total_loss_focal)
+        + np.mean(total_loss_dice)
     )
     writer.add_scalar("Loss/val", total_loss, epoch)
     writer.add_scalar("Metrics/miou", miou, epoch)
@@ -611,14 +661,14 @@ def plot_images(
 
     ows_target = target.clone().cpu().numpy()
     ows_target[ows_target == -1] = 255
-    ows_target [ows_target < classes] = 0
+    ows_target[ows_target < classes] = 0
 
     if use_mav:
         s_cont = contrastive_inference(prediction_ow)
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
         s_unk = (s_cont + s_sem) / 2
-        pred_ow = 255*(s_unk - 0.6).relu().bool().int()
+        pred_ow = 255 * (s_unk - 0.6).relu().bool().int()
         pred_ow_np = pred_ow.cpu().numpy()
 
     # Add images in the subsequent rows
@@ -631,12 +681,16 @@ def plot_images(
         image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
 
         # Process prediction_ss (semantic segmentation prediction)
-        pred_ss_np = torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0).detach().cpu().numpy()
+        pred_ss_np = (
+            torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0)
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
         # Process prediction_ow (open-world segmentation prediction)
         # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
         target_copy = target.clone().cpu().numpy()
-        target_copy += 1
 
         # Process the ground truth
         target_np = target_copy[idx]
@@ -644,13 +698,13 @@ def plot_images(
         target_c = np.zeros((*target_np.shape, 3), dtype=np.uint8)
         colors = generate_distinct_colors(classes)
 
-        for i in range(1, classes+1):
-            target_c[target_np == i] = colors[i-1]
+        for i in range(classes):
+            target_c[target_np == i] = colors[i]
         target_c = target_c.astype(np.uint8)
 
         pred_ss_np_c = np.zeros_like(target_c)
-        for i in range(1, classes+1):
-            pred_ss_np_c[pred_ss_np == i] = colors[i-1]
+        for i in range(classes):
+            pred_ss_np_c[pred_ss_np == i] = colors[i]
         pred_ss_np_c = pred_ss_np_c.astype(np.uint8)
 
         ows_binary_gt = ows_target[idx]
@@ -741,6 +795,13 @@ def get_optimizer(args, model):
     print("\n\n=========================================================================\n\n")
     return optimizer
 
+def count_trainable_parameters(model):
+    """Count the number of trainable parameters in the model."""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def print_trainable_params(model, epoch):
+    """Print trainable parameters in millions for the current epoch."""
+    # Shows: Epoch X | Trainable: Y.YYM/Z.ZZM params (XX.X%)
 
 if __name__ == "__main__":
     train_main()

@@ -290,6 +290,18 @@ class ArgumentParser(argparse.ArgumentParser):
             help="use the objectosphere loss",
         )
         self.add_argument(
+            "--dice",
+            default=False,
+            type=bool,
+            help="use the dice loss",
+        )
+        self.add_argument(
+            "--focal",
+            default=False,
+            type=bool,
+            help="use the focal loss",
+        )
+        self.add_argument(
             "--mav",
             default=False,
             type=bool,

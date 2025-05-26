@@ -9,6 +9,7 @@
 
 import os
 import sys
+import json
 
 import pandas as pd
 import numpy as np
@@ -74,7 +75,7 @@ class ContrastiveLoss(nn.Module):
 
 
 class OWLoss(nn.Module):
-    def __init__(self, n_classes, hinged=False, delta=0.1, void_label=-1):
+    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1):
         super().__init__()
         self.n_classes = n_classes
         self.hinged = hinged
@@ -92,6 +93,7 @@ class OWLoss(nn.Module):
 
         self.previous_features = None
         self.previous_count = None
+        self.epoch = 0
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
@@ -114,12 +116,13 @@ class OWLoss(nn.Module):
             # features is running mean for mav
             self.features[label] = (self.features[label] * self.count[label] + avg_mav * n_tps)
 
+            # Logits by class for true positive labels
             self.ex[label] += (logits_tps).sum(dim=0)
             self.ex2[label] += ((logits_tps) ** 2).sum(dim=0)
             self.count[label] += n_tps
             self.features[label] /= self.count[label] + 1e-8
 
-    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: torch.bool) -> torch.Tensor:
+    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: bool) -> torch.Tensor:
         if is_train:
             # update mav only at training time
             sem_gt = sem_gt#.type(torch.uint8)
@@ -132,12 +135,19 @@ class OWLoss(nn.Module):
 
         acc_loss = torch.tensor(0.0).cuda()
         for label in gt_labels[1:]:
+            # var_selection = self.var[label] > 1e-5
+            # if var_selection.sum() == 0:
+            #     continue
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
             if self.previous_count[label] > 0:
                 ew_l1 = self.criterion(logs, mav)
-                ew_l1 = ew_l1 / (self.var[label] + 1e-8)
+                # ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
+                # Car variance [0:1]
+                # We do this because the vairances become too small and the loss explodes
+                norm_variance = self.var[label] / self.var[label].abs().min()
+                ew_l1 = ew_l1 / (norm_variance + 1e-8)
                 if self.hinged:
                     ew_l1 = F.relu(ew_l1 - self.delta).sum(dim=1)
                 acc_loss += ew_l1.mean()
@@ -149,6 +159,21 @@ class OWLoss(nn.Module):
         self.previous_count = self.count
         for c in self.var.keys():
             self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (self.count[c] + 1e-8)
+            # Save to file with json
+            with open(f"monitor/var_{self.epoch}.json", "w") as f:
+                var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
+                json.dump(var_to_save, f)
+            with open(f"monitor/ex2_{self.epoch}.json", "w") as f:
+                ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
+                json.dump(ex2_to_save, f)
+            with open(f"monitor/ex_{self.epoch}.json", "w") as f:
+                ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
+                json.dump(ex_to_save, f)
+            with open(f"monitor/count_{self.epoch}.json", "w") as f:
+                count_to_save = self.count.cpu().numpy().tolist()
+                json.dump(count_to_save, f)
+
+        self.epoch += 1
 
         # resetting for next epoch
         self.count = torch.zeros(self.n_classes)  # count for class
@@ -177,11 +202,11 @@ class ObjectosphereLoss(nn.Module):
         logits_kn = logits.permute(0, 2, 3, 1)[torch.where(sem_gt != self.void_label)]
 
         if len(logits_unk):
-            loss_unk = torch.linalg.norm(logits_unk, dim=1).mean()
+            loss_unk = (torch.linalg.norm(logits_unk, dim=1)**2).mean()
         else:
             loss_unk = torch.tensor(0)
         if len(logits_kn):
-            loss_kn = F.relu(self.sigma - torch.linalg.norm(logits_kn, dim=1)).mean()
+            loss_kn = F.relu(self.sigma - (torch.linalg.norm(logits_kn, dim=1)**2)).mean()
         else:
             loss_kn = torch.tensor(0)
 
@@ -205,7 +230,7 @@ class CrossEntropyLoss2d(nn.Module):
 
     def forward(self, inputs, targets):
         # targets_m = targets.clone()
-        if (targets == -1).all(): # i.e. if all labels are void (-1)
+        if (targets == self.void_label).all(): # i.e. if all labels are void (-1)
             return [torch.tensor(0.0).cuda()]
             # import ipdb;ipdb.set_trace()  # fmt: skip
         # targets_m -= 1
@@ -297,7 +322,7 @@ def save_ckpt(ckpt_dir, model, optimizer, epoch):
 
 
 def save_ckpt_every_epoch(
-    ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mavs, stds
+    ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mavs, stds, ows_loss
 ):
     state = {
         "epoch": epoch,
@@ -307,6 +332,7 @@ def save_ckpt_every_epoch(
         "best_miou_epoch": best_miou_epoch,
         "mavs": mavs,
         "stds": stds,
+        "ows_loss": ows_loss,
     }
     ckpt_model_filename = "ckpt_latest.pth".format(epoch)
     path = os.path.join(ckpt_dir, ckpt_model_filename)
@@ -325,6 +351,7 @@ def load_ckpt(model, optimizer, model_file, device):
 
         mav_dict = checkpoint["mavs"]
         std_dict = checkpoint["stds"]
+        ows_loss = checkpoint["ows_loss"] if "ows_loss" in checkpoint else None
 
         model.load_state_dict(checkpoint["state_dict"])
 
@@ -347,7 +374,7 @@ def load_ckpt(model, optimizer, model_file, device):
             print("Best mIoU epoch:", best_miou_epoch)
         else:
             best_miou_epoch = 0
-        return epoch, best_miou, best_miou_epoch, mav_dict, std_dict
+        return epoch, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss
     else:
         print("=> no checkpoint found at '{}'".format(model_file))
         sys.exit(1)

@@ -10,3 +10,5 @@ from .ce_loss import CrossEntropyLoss2d, CrossEntropyLoss2dForValidData, CrossEn
 from .contrastive_loss import ContrastiveLoss
 from .objectosphere_loss import ObjectosphereLoss
 from .ow_loss import OWLoss
+from .focal_loss import FocalLoss
+from .dice_loss import DiceLoss
