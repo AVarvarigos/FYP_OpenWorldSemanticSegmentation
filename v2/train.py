@@ -94,11 +94,25 @@ def train_main():
         class_weighting = np.ones(n_classes_without_void)
     # model building -----------------------------------------------------------
     model, device = build_model(args, n_classes=n_classes_without_void)
+    
+    # Print initial model parameter info
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = count_trainable_parameters(model)
+    print(f"\n📊 MODEL PARAMETERS:")
+    print(f"   Total: {total_params/1_000_000:.2f}M parameters")
+    print(f"   Trainable: {trainable_params/1_000_000:.2f}M parameters ({100*trainable_params/total_params:.1f}%)")
+    
     if args.freeze > 0:
         print("Freeze everything but the output layer(s).")
         for name, param in model.named_parameters():
             if "out" not in name:
                 param.requires_grad = False
+
+        # Print parameters after freezing
+        trainable_after_freeze = count_trainable_parameters(model)
+        print(f"   After freezing: {trainable_after_freeze/1_000_000:.2f}M trainable parameters ({100*trainable_after_freeze/total_params:.1f}%)")
+        print(f"   Will unfreeze at epoch {args.freeze}")
+    print()
 
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
 
@@ -156,10 +170,12 @@ def train_main():
     # load checkpoint if parameter last_ckpt is provided
     if args.last_ckpt:
         ckpt_path = args.last_ckpt
-        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict = load_ckpt(
+        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss = load_ckpt(
             model, optimizer, ckpt_path, device
         )
         start_epoch = epoch_last_ckpt + 1
+        train_loss[2] = ows_loss
+        val_loss[2] = ows_loss
     else:
         start_epoch = 0
         best_miou = 0
@@ -723,6 +739,7 @@ def plot_images(
     plt.savefig(full_plot_path, bbox_inches="tight")
     plt.close(fig)
 
+import colorsys
 
 def generate_distinct_colors(n):
     colors = []
@@ -778,31 +795,13 @@ def get_optimizer(args, model):
     print("\n\n=========================================================================\n\n")
     return optimizer
 
+def count_trainable_parameters(model):
+    """Count the number of trainable parameters in the model."""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def print_trainable_params(model, epoch):
+    """Print trainable parameters in millions for the current epoch."""
+    # Shows: Epoch X | Trainable: Y.YYM/Z.ZZM params (XX.X%)
 
 if __name__ == "__main__":
-    # sys.argv = [
-    #     "train.py",
-    #     "--id",
-    #     "someid",
-    #     "--dataset_dir",
-    #     "/workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes",
-    #     "--num_classes",
-    #     "19",
-    #     "--batch_size",
-    #     "20",
-    #     "--pretrained_dir",
-    #     "/workspace/Models/resnet34NonBottleneck1D",
-    #     "--loss_weights",
-    #     "1,1,1,1",
-    #     "--workers",
-    #     "20",
-    #     "--encoder",
-    #     "resnet34",
-    #     "--encoder_block",
-    #     "NonBottleneck1D",
-    #     "--plot_results",
-    #     "true",
-    #     "--lr",
-    #     "4e-3",
-    # ]
     train_main()

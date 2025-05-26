@@ -75,7 +75,7 @@ class ContrastiveLoss(nn.Module):
 
 
 class OWLoss(nn.Module):
-    def __init__(self, n_classes, hinged=False, delta=0.1, void_label=-1):
+    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1):
         super().__init__()
         self.n_classes = n_classes
         self.hinged = hinged
@@ -144,7 +144,10 @@ class OWLoss(nn.Module):
             if self.previous_count[label] > 0:
                 ew_l1 = self.criterion(logs, mav)
                 # ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
-                ew_l1 = ew_l1 / (self.var[label] + 1e-8)
+                # Car variance [0:1]
+                # We do this because the vairances become too small and the loss explodes
+                norm_variance = self.var[label] / self.var[label].abs().min()
+                ew_l1 = ew_l1 / (norm_variance + 1e-8)
                 if self.hinged:
                     ew_l1 = F.relu(ew_l1 - self.delta).sum(dim=1)
                 acc_loss += ew_l1.mean()
@@ -319,7 +322,7 @@ def save_ckpt(ckpt_dir, model, optimizer, epoch):
 
 
 def save_ckpt_every_epoch(
-    ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mavs, stds
+    ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mavs, stds, ows_loss
 ):
     state = {
         "epoch": epoch,
@@ -329,6 +332,7 @@ def save_ckpt_every_epoch(
         "best_miou_epoch": best_miou_epoch,
         "mavs": mavs,
         "stds": stds,
+        "ows_loss": ows_loss,
     }
     ckpt_model_filename = "ckpt_latest.pth".format(epoch)
     path = os.path.join(ckpt_dir, ckpt_model_filename)
@@ -347,6 +351,7 @@ def load_ckpt(model, optimizer, model_file, device):
 
         mav_dict = checkpoint["mavs"]
         std_dict = checkpoint["stds"]
+        ows_loss = checkpoint["ows_loss"] if "ows_loss" in checkpoint else None
 
         model.load_state_dict(checkpoint["state_dict"])
 
@@ -369,7 +374,7 @@ def load_ckpt(model, optimizer, model_file, device):
             print("Best mIoU epoch:", best_miou_epoch)
         else:
             best_miou_epoch = 0
-        return epoch, best_miou, best_miou_epoch, mav_dict, std_dict
+        return epoch, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss
     else:
         print("=> no checkpoint found at '{}'".format(model_file))
         sys.exit(1)

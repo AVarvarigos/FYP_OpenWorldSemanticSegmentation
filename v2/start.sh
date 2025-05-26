@@ -1,5 +1,5 @@
 /workspace/.local/envs/openworld/bin/python train.py \
-  --id freezeencoder --dataset_dir /workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes --num_classes 19 --batch_size 8 \
+  --id fixed-ows --dataset_dir /workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes --num_classes 19 --batch_size 8 \
   --pretrained_dir /workspace/Models/resnet34NonBottleneck1D \
   --obj true \
   --mav true \

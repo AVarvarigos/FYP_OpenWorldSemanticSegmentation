@@ -210,7 +210,7 @@ class OWSNetwork(nn.Module):
 
         out = self.context_module(out_512)
 
-        outs = [out_512, skip3, skip2, skip1]
+        outs = [out, skip3, skip2, skip1]
 
         tru_for_result = None
         ow_output = self.decoder_ow(enc_outs=outs)
