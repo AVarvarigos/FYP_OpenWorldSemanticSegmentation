@@ -16,6 +16,7 @@ import numpy as np
 from torch import nn
 import torch
 import torch.nn.functional as F
+from pathlib import Path
 
 
 class ContrastiveLoss(nn.Module):
@@ -75,7 +76,7 @@ class ContrastiveLoss(nn.Module):
 
 
 class OWLoss(nn.Module):
-    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1):
+    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1, save_dir=None, applied=True):
         super().__init__()
         self.n_classes = n_classes
         self.hinged = hinged
@@ -94,6 +95,13 @@ class OWLoss(nn.Module):
         self.previous_features = None
         self.previous_count = None
         self.epoch = 0
+        self.applied = applied
+        if save_dir is None:
+            save_dir = Path.cwd()
+        if save_dir is not None:
+            save_dir = Path(save_dir).joinpath('monitor')
+            save_dir.mkdir(parents=True, exist_ok=True)
+            self.save_dir = save_dir
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
@@ -134,6 +142,8 @@ class OWLoss(nn.Module):
         logits_permuted = logits.permute(0, 2, 3, 1)
 
         acc_loss = torch.tensor(0.0).cuda()
+        if not self.applied:
+            return acc_loss
         for label in gt_labels[1:]:
             # var_selection = self.var[label] > 1e-5
             # if var_selection.sum() == 0:
@@ -141,16 +151,24 @@ class OWLoss(nn.Module):
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
-            if self.previous_count[label] > 0:
+            if self.previous_count[label] > 0 and not self.var[label].sum() == 0:
                 ew_l1 = self.criterion(logs, mav)
                 # ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + 1e-8)
                 # Car variance [0:1]
                 # We do this because the vairances become too small and the loss explodes
-                norm_variance = self.var[label] / self.var[label].abs().min()
+                filter_out_zero = self.var[label] > 0
+                variance = self.var[label].clone()
+                non_zero_min = variance[filter_out_zero].abs().min()
+                variance[filter_out_zero] = non_zero_min
+                norm_variance = variance / non_zero_min
                 ew_l1 = ew_l1 / (norm_variance + 1e-8)
                 if self.hinged:
-                    ew_l1 = F.relu(ew_l1 - self.delta).sum(dim=1)
-                acc_loss += ew_l1.mean()
+                    ew_l1 = F.relu(ew_l1 - self.delta)
+                ew_l1 = ew_l1.mean()
+                if ew_l1.isnan().any():
+                    print("NaN in ew_l1, skipping this label")
+                    continue
+                acc_loss += ew_l1
 
         return acc_loss
 
@@ -160,16 +178,16 @@ class OWLoss(nn.Module):
         for c in self.var.keys():
             self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + 1e-8)) / (self.count[c] + 1e-8)
             # Save to file with json
-            with open(f"monitor/var_{self.epoch}.json", "w") as f:
+            with open(self.save_dir.joinpath(f"var_{self.epoch}.json"), "w") as f:
                 var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
                 json.dump(var_to_save, f)
-            with open(f"monitor/ex2_{self.epoch}.json", "w") as f:
+            with open(self.save_dir.joinpath(f"ex2_{self.epoch}.json"), "w") as f:
                 ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
                 json.dump(ex2_to_save, f)
-            with open(f"monitor/ex_{self.epoch}.json", "w") as f:
+            with open(self.save_dir.joinpath(f"ex_{self.epoch}.json"), "w") as f:
                 ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
                 json.dump(ex_to_save, f)
-            with open(f"monitor/count_{self.epoch}.json", "w") as f:
+            with open(self.save_dir.joinpath(f"count_{self.epoch}.json"), "w") as f:
                 count_to_save = self.count.cpu().numpy().tolist()
                 json.dump(count_to_save, f)
 

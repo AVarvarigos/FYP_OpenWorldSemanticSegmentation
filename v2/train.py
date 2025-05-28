@@ -123,7 +123,7 @@ def train_main():
     focal_loss = losses.FocalLoss()
     dice_loss = losses.DiceLoss()
     loss_objectosphere = utils.ObjectosphereLoss()
-    loss_mav = utils.OWLoss(n_classes=n_classes_without_void)
+    loss_mav = utils.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
     loss_contrastive = utils.ContrastiveLoss(n_classes=n_classes_without_void)
 
     pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
@@ -205,6 +205,10 @@ def train_main():
             writer=writer,
         )
 
+        # validate every 3 epochs
+        if args.overfit and epoch % 3 != 0:
+            continue
+
         print("VALIDATION TO BE IMPLEMENTED")
         miou = validate(
             model=model,
@@ -227,7 +231,7 @@ def train_main():
         if not args.overfit:
             # save / overwrite latest weights (useful for resuming training)
             save_ckpt_every_epoch(
-                ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mean, var
+                ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mean, var, train_loss[2]
             )
             if (epoch + 1) % 20 == 0:
                 torch.save(
@@ -469,7 +473,7 @@ def validate(
 
 
             if epoch % 3 == 0 and i == 0 and plot_results:
-                plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None)
+                plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
 
             # compute valid loss
             loss_function_valid.add_loss_of_batch(

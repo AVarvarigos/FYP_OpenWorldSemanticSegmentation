@@ -179,3 +179,5 @@ cython_debug/
 *logs/
 *loss_plot.png
 *resnet50-19c8e357.pth
+
+*.out
