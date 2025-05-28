@@ -156,5 +156,5 @@ class Cityscapes(CityscapesBase, DatasetBase):
 
     def __len__(self):
         if self.overfit:
-            return 2
+            return 8
         return len(self.images)

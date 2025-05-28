@@ -40,6 +40,10 @@ def prepare_data(args, ckpt_dir=None, with_input_orig=False, split=None):
         **dataset_kwargs,
     )
 
+    if args.overfit:
+        # if we are overfitting, we use the same data for validation
+        valid_set = "train"
+
     valid_data = Dataset(
         data_dir=args.dataset_dir,
         split=valid_set,
@@ -91,8 +95,8 @@ def prepare_data(args, ckpt_dir=None, with_input_orig=False, split=None):
             return valid_data, valid_preprocessor
 
     if args.overfit:
-        args.batch_size = 2
-        args.batch_size_valid = 2
+        args.batch_size = 8
+        args.batch_size_valid = 8
 
         # create the data loaders
         train_loader = DataLoader(
