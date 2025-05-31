@@ -1,0 +1,57 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "train.py",
+            "console": "integratedTerminal",
+            "python": "${command:python.interpreterPath}",
+            // "cwd": "${workspaceFolder}/FYP/FYP_OpenWorldSemanticSegmentation/v2",
+            // "justMyCode": false,
+            "args": [
+                "--id",
+                "1123",
+                "--dataset_dir",
+                "/workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes",
+                "--num_classes",
+                "19",
+                "--workers",
+                "10",
+                "--batch_size",
+                "8",
+                "--encoder_block",
+                "NonBottleneck1D",
+                // "--debug",
+                "--pretrained_dir",
+                "/workspace/Models/resnet34NonBottleneck1D",
+                "--learning-rate",
+                "0.0005",
+                "--overfit",
+                "true",
+                "--plot_results",
+                "true",
+                "--obj",
+                "true"
+            ],
+            // "envFile": "${workspaceFolder}/.env"
+        },
+        // {
+        //     "name": "Preprocess",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "proprocessing_unknown_known.py",
+        //     "console": "integratedTerminal",
+        //     "python": "${command:python.interpreterPath}",
+        //     "cwd": "${workspaceFolder}/FYP/FYP_OpenWorldSemanticSegmentation/v2",
+        //     "env": {
+        //         "CITYSCAPES_DATASET_DIR": "/workspace/FYP/FYP_OpenWorldSemanticSegmentation/v2/datasets/cityscapes",
+        //     }
+        //     // "envFile": "${workspaceFolder}/.env"
+        // },
+    ]
+}

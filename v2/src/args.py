@@ -67,7 +67,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
         # input dimensions
         self.add_argument(
-            "--batch_size", type=int, default=4, help="batch size for training"
+            "--batch_size", type=int, default=8, help="batch size for training"
         )
         self.add_argument(
             "--batch_size_valid",
