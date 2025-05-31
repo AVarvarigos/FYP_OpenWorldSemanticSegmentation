@@ -82,6 +82,9 @@ class Cityscapes(CityscapesBase, DatasetBase):
             #     self.labels.append(filename)
             self.images.sort()
             self.labels.sort()
+            if self.overfit:
+                self.images = self.images[:16]
+                self.labels = self.labels[:16]
 
             self._files = {}
 
@@ -155,6 +158,4 @@ class Cityscapes(CityscapesBase, DatasetBase):
         return label
 
     def __len__(self):
-        if self.overfit:
-            return 8
         return len(self.images)

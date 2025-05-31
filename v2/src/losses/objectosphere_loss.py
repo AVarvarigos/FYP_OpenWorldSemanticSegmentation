@@ -18,17 +18,17 @@ class ObjectosphereLoss(nn.Module):
         self.void_label = void_label
 
     def forward(self, logits, sem_gt): # 0,1,2,3, 0, 2, 3, 1 B, C, H, W -> B, H, W, C
-        logits_unk = logits.permute(0, 2, 3, 1)[torch.where(sem_gt == self.void_label)]
-        logits_kn = logits.permute(0, 2, 3, 1)[torch.where(sem_gt != self.void_label)]
+        logits_unk = logits.permute(0, 2, 3, 1)[sem_gt == self.void_label]
+        logits_kn = logits.permute(0, 2, 3, 1)[sem_gt != self.void_label]
 
-        if len(logits_unk):
-            loss_unk = torch.linalg.norm(logits_unk, dim=1).mean()
-        else:
-            loss_unk = torch.tensor(0)
-        if len(logits_kn):
-            loss_kn = F.relu(self.sigma - torch.linalg.norm(logits_kn, dim=1)).mean()
-        else:
-            loss_kn = torch.tensor(0)
+        loss_unk = (torch.linalg.norm(logits_unk, dim=1)).mean() if len(logits_unk) else torch.tensor(0.0).to(logits)
+        loss_kn = (
+            F.relu(self.sigma - (torch.linalg.norm(logits_kn, dim=1))).mean()
+            if len(logits_kn)
+            else torch.tensor(0.0).to(logits)
+        )
 
-        loss = 10 * loss_unk + loss_kn
-        return loss
+        # TODO: maybe the "10" is problematic because it tries to send uknown to zero but does not do much into pushing
+        # known to 1, thus not being able to differentiate between the two easily. Train with 1,2,4,8,16,32 here to see
+        # what it does
+        return 10 * loss_unk + loss_kn

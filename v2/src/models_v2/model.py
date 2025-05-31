@@ -69,6 +69,7 @@ class OWSNetwork(nn.Module):
                 input_channels=input_channels,
             )
         elif encoder == "resnet34":
+            print(pretrained_on_imagenet)
             self.encoder = ResNet34(
                 block=encoder_block,
                 pretrained_on_imagenet=pretrained_on_imagenet,
@@ -87,6 +88,10 @@ class OWSNetwork(nn.Module):
                 "Only ResNets as encoder are supported "
                 "so far. Got {}".format(activation)
             )
+
+        # Freeze the backbone
+        for name, param in self.encoder.named_parameters():
+            param.requires_grad = False
 
         self.channels_decoder_in = self.encoder.down_32_channels_out
 
