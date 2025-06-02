@@ -88,6 +88,11 @@ class OWSNetwork(nn.Module):
                 "so far. Got {}".format(activation)
             )
 
+        # Freeze the backbone
+        # TODO: Is this necessary?
+        for name, param in self.encoder.named_parameters():
+            param.requires_grad = False
+
         self.channels_decoder_in = self.encoder.down_32_channels_out
 
         self.se_layer0 = nn.Identity()
