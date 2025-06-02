@@ -125,7 +125,7 @@ def train_main():
     focal_loss = losses.FocalLoss()
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
-    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir, applied=False)
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
 
     # pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
