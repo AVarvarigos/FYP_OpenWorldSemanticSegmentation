@@ -31,4 +31,4 @@ class ObjectosphereLoss(nn.Module):
         # TODO: maybe the "10" is problematic because it tries to send uknown to zero but does not do much into pushing
         # known to 1, thus not being able to differentiate between the two easily. Train with 1,2,4,8,16,32 here to see
         # what it does
-        return 10 * loss_unk + loss_kn
+        return 500 * loss_unk + loss_kn
