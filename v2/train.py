@@ -407,6 +407,7 @@ def validate(
     classes=19,
     plot_results=False,
     plot_path=None,
+    is_train_loader = False
 ):
     valid_split = valid_loader.dataset.split + add_log_key
 
@@ -446,7 +447,7 @@ def validate(
     # the same resolution and can be resized together to the ground truth
     # segmentation size.
 
-    for i, sample in enumerate(tqdm(valid_loader, desc="Valid step")):
+    for i, sample in enumerate(tqdm(valid_loader, desc="Valid step", leave=False)):
         # copy the data to gpu
         image = sample["image"].to(device)
 
@@ -460,20 +461,17 @@ def validate(
             if not device.type == "cpu":
                 torch.cuda.synchronize()
 
-            sample["label"] = sample["label"].long().cuda() - 2
-            target = sample["label"].clone().cuda()
-            target_iou = sample["label"].clone().cuda()
+            target = sample["label"].long().to(device) - 2
+            # target = sample["label"].clone().cuda()
+            target_iou = target.clone()
             target_iou[target_iou == -1] = 255
-            compute_iou.update(prediction_ss, target_iou.cuda())
-
+            compute_iou.update(prediction_ss, target_iou)
 
             if epoch % 3 == 0 and i == 0 and plot_results:
                 plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
 
             # compute valid loss
-            loss_function_valid.add_loss_of_batch(
-                prediction_ss, sample["label"].to(device)
-            )
+            loss_function_valid.add_loss_of_batch(prediction_ss, target)
 
             loss_objectosphere = torch.tensor(0)
             loss_ows = torch.tensor(0)
@@ -517,14 +515,24 @@ def validate(
         + np.mean(total_loss_focal)
         + np.mean(total_loss_dice)
     )
-    writer.add_scalar("Loss/val", total_loss, epoch)
-    writer.add_scalar("Metrics/miou", miou, epoch)
-    for i, iou in enumerate(ious):
-        writer.add_scalar(
-            "Class_metrics/iou_{}".format(i),
-            torch.mean(iou),
-            epoch,
-        )
+    if is_train_loader:
+        writer.add_scalar("Training/Loss", total_loss, epoch)
+        writer.add_scalar("Training/miou", miou, epoch)
+        for i, iou in enumerate(ious):
+            writer.add_scalar(
+                "Training/Class_metrics/iou_{}".format(i),
+                torch.mean(iou),
+                epoch,
+            )
+    else:       
+        writer.add_scalar("Validation/Loss", total_loss, epoch)
+        writer.add_scalar("Validation/miou", miou, epoch)
+        for i, iou in enumerate(ious):
+            writer.add_scalar(
+                "Validation/Class_metrics/iou_{}".format(i),
+                torch.mean(iou),
+                epoch,
+            )
 
     return miou
 
@@ -662,13 +670,13 @@ def plot_images(
     ows_target[ows_target == -1] = 255
     ows_target[ows_target < classes] = 0
 
-    if use_mav:
-        s_cont = contrastive_inference(prediction_ow)
+    s_unk = contrastive_inference(prediction_ow)
+    if use_mav and mavs is not None:
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
-        s_unk = (s_cont + s_sem) / 2
-        pred_ow = 255 * (s_unk - 0.6).relu().bool().int()
-        pred_ow_np = pred_ow.cpu().numpy()
+        s_unk = (s_unk + s_sem) / 2
+    pred_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    pred_ow_np = pred_ow.cpu().numpy()
 
     # Add images in the subsequent rows
     for idx in range(8):  # Limit to 8 rows of images
@@ -708,8 +716,8 @@ def plot_images(
 
         ows_binary_gt = ows_target[idx]
 
-        if use_mav:
-            pred_ow_np_i = pred_ow_np[idx]
+        # if use_mav:
+        pred_ow_np_i = pred_ow_np[idx]
 
         # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
         axes[idx + 1, 0].imshow(image_np)
@@ -718,9 +726,9 @@ def plot_images(
         axes[idx + 1, 1].imshow(pred_ss_np_c)
         axes[idx + 1, 1].axis("off")
 
-        if use_mav:
-            axes[idx + 1, 2].imshow(pred_ow_np_i)
-            axes[idx + 1, 2].axis("off")
+        # if use_mav:
+        axes[idx + 1, 2].imshow(pred_ow_np_i)
+        axes[idx + 1, 2].axis("off")
 
         axes[idx + 1, 3].imshow(target_c)
         axes[idx + 1, 3].axis("off")
@@ -752,8 +760,7 @@ def generate_distinct_colors(n):
 
 
 def contrastive_inference(predictions, radius=1.0):
-    scores = F.relu(1 - torch.norm(predictions, dim=1) / radius)
-    return scores
+    return F.relu(1 - torch.linalg.norm(predictions, dim=1) / radius)
 
 
 def semantic_inference(predictions, mavs, var):
