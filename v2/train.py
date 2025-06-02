@@ -159,21 +159,21 @@ def train_main():
     optimizer = get_optimizer(args, model)
 
     # in this script lr_scheduler.step() is only called once per epoch
-    lr_scheduler = OneCycleLR(
-        optimizer,
-        max_lr=[i["lr"] for i in optimizer.param_groups],
-        total_steps=args.epochs,
-        div_factor=25,
-        pct_start=0.1,
-        anneal_strategy="cos",
-        final_div_factor=1e4,
-    )
-    # lr_scheduler = ReduceLROnPlateau(
+    # lr_scheduler = OneCycleLR(
     #     optimizer,
-    #     mode='min',
-    #     factor=0.5,
-    #     patience=10,
+    #     max_lr=[i["lr"] for i in optimizer.param_groups],
+    #     total_steps=args.epochs,
+    #     div_factor=25,
+    #     pct_start=0.1,
+    #     anneal_strategy="cos",
+    #     final_div_factor=1e4,
     # )
+    lr_scheduler = ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=10,
+    )
 
     # load checkpoint if parameter last_ckpt is provided
     if args.last_ckpt:
@@ -288,7 +288,7 @@ def train_one_epoch(
     writer,
     debug_mode=False,
 ):
-    lr_scheduler.step(epoch)
+    # lr_scheduler.step(epoch)
     samples_of_epoch = 0
 
     # set model to train mode
@@ -297,18 +297,25 @@ def train_one_epoch(
     loss_function_train, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = train_loss
 
     # summed loss of all resolutions
-    total_loss_list = []
-    total_sem_loss = []
-    total_obj_loss = []
-    total_ows_loss = []
-    total_con_loss = []
-    total_focal_loss = []
-    total_dice_loss = []
+    losses_lists = {
+        loss_name: []
+        for loss_name in ["total", "segmentation", "objectsphere", "ows", "contrastive", "dice", "focal"]
+    }
+    loss_weights = {
+        "segmentation": 1.0,
+        "objectsphere": 0.5,
+        "ows": 0.1,
+        "contrastive": 0.5,
+        "dice": 0.5,
+        "focal": 0.9,
+    }
 
     mavs = None
     if epoch and loss_contrastive is not None:
         mavs = loss_mav.read()
-    for i, sample in enumerate(train_loader):
+
+    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
+    for sample in progress_bar:
         start_time_for_one_step = time.time()
 
         # load the data and send them to gpu
@@ -318,99 +325,98 @@ def train_one_epoch(
         # TODO: wt is dis?
         # label = sample["label"].long().cuda() - 1
         # label[label < 0] = 255
-        sample["label"] = sample["label"] - 2
-        label_ss = sample["label"].clone().cuda()
+        label = sample["label"].cuda().long() - 2
         # label_ss[label_ss == 255] = 0
         # target_scales = label_ss
 
+        # NOTE: for future me, for some weird reason I can not explain, this is necessary.
         for param in model.parameters():
             param.grad = None
 
         # forward pass
         pred_scales, ow_res = model(image)
-        cw_target = label_ss.clone()
+        # cw_target = label_ss.clone()
         # cw_target[cw_target > 15] = -1
-        losses = loss_function_train(pred_scales, cw_target)
-        loss_segmentation = sum(losses)
-        loss_objectosphere = torch.tensor(0.0)
-        loss_ows = torch.tensor(0.0)
-        loss_con = torch.tensor(0.0)
-        i_loss_dice = torch.tensor(0.0)
-        i_loss_focal = torch.tensor(0.0)
-        total_loss = 0.9 * loss_segmentation
-        label = sample["label"].long().cuda()
+        loss = loss_function_train(pred_scales, label.clone().cuda())
+        # label = sample["label"].long().cuda()
         # label[label < 0] = 255
 
-        if loss_focal is not None:
-            i_loss_focal = loss_focal(pred_scales, label)
-            total_loss += 0.9 * i_loss_focal
-        if loss_dice is not None:
-            i_loss_dice = loss_dice(pred_scales, label)
-            total_loss += 0.5 * i_loss_dice
-        if loss_obj is not None:
-            label_ow = label.clone().cuda()
-            loss_objectosphere = loss_obj(ow_res, label_ow)
-            total_loss += 0.5 * loss_objectosphere
-        if loss_mav is not None:
-            loss_ows = loss_mav(pred_scales, label, is_train=True)
-            total_loss += 0.1 * loss_ows
-        if loss_contrastive is not None:
-            loss_con = loss_contrastive(mavs, ow_res, label, epoch)
-            total_loss += 0.5 * loss_con
+        losses = {
+            "segmentation": loss,
+            "objectsphere": loss_obj,
+            "ows": loss_mav,
+            "contrastive": loss_contrastive,
+            "dice": loss_dice,
+            "focal": loss_focal
+        }
+
+        if losses["focal"] is not None:
+            losses["focal"] = losses["focal"](pred_scales, label.clone().cuda())
+        if losses["dice"] is not None:
+            losses["dice"] = losses["dice"](pred_scales, label.clone().cuda())
+        if losses["objectsphere"] is not None:
+            losses["objectsphere"] = losses["objectsphere"](ow_res, label.clone().cuda())
+        if losses["ows"] is not None:
+            losses["ows"] = losses["ows"](pred_scales, label.clone().cuda(), is_train=True)
+        if losses["contrastive"] is not None:
+            losses["contrastive"] = losses["contrastive"](mavs, ow_res, label.clone().cuda(), epoch)
+
+        losses = {
+            loss_name: loss_item
+            for loss_name, loss_item in losses.items()
+            if loss_item is not None
+        }
+
+        total_loss = 0
+        for loss_name in losses:
+            total_loss += loss_weights[loss_name] * losses[loss_name]
+        losses["total"] = total_loss
+
+        for loss_name, loss_i in losses.items():
+            losses_lists[loss_name].append(loss_i.detach())
+
+        if torch.isnan(losses["total"]):
+            import ipdb;ipdb.set_trace()  # fmt: skip
+            raise ValueError("Loss is None")
 
         total_loss.backward()
         optimizer.step()
-
-        # append loss values to the lists. Later we can calculate the
-        # mean training loss of this epoch
-        total_loss = total_loss.cpu().detach().numpy()
-        loss_segmentation = loss_segmentation.cpu().detach().numpy()
-        loss_objectosphere = loss_objectosphere.cpu().detach().numpy()
-        loss_ows = loss_ows.cpu().detach().numpy()
-        loss_con = loss_con.cpu().detach().numpy()
-        i_loss_dice = i_loss_dice.cpu().detach().numpy()
-        i_loss_focal = i_loss_focal.cpu().detach().numpy()
-
-        total_loss_list.append(total_loss)
-        total_sem_loss.append(loss_segmentation)
-        total_obj_loss.append(loss_objectosphere)
-        total_ows_loss.append(loss_ows)
-        total_con_loss.append(loss_con)
-        total_focal_loss.append(i_loss_focal)
-        total_dice_loss.append(i_loss_dice)
-
-        if np.isnan(total_loss):
-            import ipdb;ipdb.set_trace()  # fmt: skip
-            raise ValueError("Loss is None")
 
         # print log
         samples_of_epoch += batch_size
         time_inter = time.time() - start_time_for_one_step
 
-        learning_rates = lr_scheduler.get_lr()
+        learning_rates = [
+            pg['lr'] for pg in optimizer.param_groups
+        ]
 
-        print_log(
-            epoch,
-            samples_of_epoch,
-            batch_size,
-            len(train_loader.dataset),
-            total_loss,
-            time_inter,
-            learning_rates,
-        )
+        # Update progress bar
+        progress_bar.set_postfix({
+            'batch_loss': f'{losses["total"]:.4f}',
+            'lr': f'{learning_rates[0]:.4f}'
+        })
+
+        # print_log(
+        #     epoch,
+        #     samples_of_epoch,
+        #     batch_size,
+        #     len(train_loader.dataset),
+        #     losses["total"],
+        #     time_inter,
+        #     learning_rates,
+        # )
 
         if debug_mode:
             # only one batch while debugging
             break
 
+    lr_scheduler.step(torch.tensor(losses_lists["total"]).mean().item())
+
     # fill the logs for csv log file and web logger
-    writer.add_scalar("Loss/train", np.mean(total_loss_list), epoch)
-    writer.add_scalar("Loss/semantic", np.mean(total_sem_loss), epoch)
-    writer.add_scalar("Loss/objectosphere", np.mean(total_obj_loss), epoch)
-    writer.add_scalar("Loss/ows", np.mean(total_ows_loss), epoch)
-    writer.add_scalar("Loss/contrastive", np.mean(total_con_loss), epoch)
-    writer.add_scalar("Loss/focal", np.mean(total_focal_loss), epoch)
-    writer.add_scalar("Loss/dice", np.mean(total_dice_loss), epoch)
+    for loss_name, loss_list in losses_lists.items():
+        if not loss_list:
+            continue
+        writer.add_scalar(f"Loss/{loss_name}", torch.tensor(loss_list).mean().item(), epoch)
 
     if loss_mav is not None:
         mean, var = loss_mav.update()

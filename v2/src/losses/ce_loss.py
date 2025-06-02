@@ -32,7 +32,7 @@ class CrossEntropyLoss2d(nn.Module):
     def forward(self, inputs, targets):
         # targets_m = targets.clone()
         if (targets == -1).all():  # i.e. if all labels are void (-1)
-            return [torch.tensor(0.0).cuda()]
+            return torch.tensor(0.0).cuda()
             # import ipdb;ipdb.set_trace()  # fmt: skip
         # targets_m -= 1
         # assert (targets - 1 >= 0).all()
@@ -47,7 +47,7 @@ class CrossEntropyLoss2d(nn.Module):
         # number_of_pixels_per_class = torch.bincount(targets.flatten() - 1, minlength=self.num_classes)
         # divisor_weighted_pixel_sum = torch.sum(number_of_pixels_per_class[1:] * self.weight) # without void
 
-        return [torch.sum(loss_all) / divisor_weighted_pixel_sum]
+        return torch.sum(loss_all) / divisor_weighted_pixel_sum
 
 
 class CrossEntropyLoss2dForValidData:
