@@ -14,7 +14,7 @@ import sys
 import time
 from datetime import datetime
 import colorsys
-
+import random
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -26,7 +26,7 @@ from src.build_model import build_model
 from src.prepare_data import prepare_data
 from src.utils import load_ckpt, print_log, save_ckpt_every_epoch
 from torch.functional import F
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
 from tqdm import tqdm
@@ -60,10 +60,14 @@ def parse_args():
 
 def train_main():
     seed = 42
+    random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
     args = parse_args()
+
+    print(args)
 
     # directory for storing weights and other training related files
     training_starttime = datetime.now().strftime("%d_%m_%Y-%H_%M_%S-%f")
@@ -117,17 +121,20 @@ def train_main():
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
 
     # loss functions
-    loss_function_train = losses.CrossEntropyLoss2d(
-        weight=class_weighting, device=device
-    )
+    loss_function_train = losses.CrossEntropyLoss2d(weight=class_weighting, device=device)
     focal_loss = losses.FocalLoss()
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
-    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir, applied=False)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
 
+    # pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
+    #     weight_mode="linear"
+    # )
+    # pixel_sum_valid_data_weighted = np.sum(pixel_sum_valid_data * class_weighting)
     loss_function_valid = losses.CrossEntropyLoss2dForValidData(
         weight=class_weighting,
+        # weighted_pixel_sum=pixel_sum_valid_data_weighted,
         device=device,
     )
 
@@ -161,6 +168,12 @@ def train_main():
         anneal_strategy="cos",
         final_div_factor=1e4,
     )
+    # lr_scheduler = ReduceLROnPlateau(
+    #     optimizer,
+    #     mode='min',
+    #     factor=0.5,
+    #     patience=10,
+    # )
 
     # load checkpoint if parameter last_ckpt is provided
     if args.last_ckpt:
@@ -204,7 +217,6 @@ def train_main():
         if args.overfit and epoch % 3 != 0:
             continue
 
-        print("VALIDATION TO BE IMPLEMENTED")
         miou = validate(
             model=model,
             var=var,
@@ -219,8 +231,22 @@ def train_main():
             plot_path=os.path.join(ckpt_dir, "val_results")
         )
 
+        train_miou = validate(
+            model=model,
+            var=var,
+            valid_loader=train_loader,
+            device=device,
+            val_loss=val_loss,
+            epoch=epoch,
+            debug_mode=args.debug,
+            writer=writer,
+            classes=args.num_classes,
+            plot_results=args.plot_results,
+            plot_path=os.path.join(ckpt_dir, "train_results"),
+            is_train_loader = True
+        )
+
         writer.flush()
-        wandb.finish()
 
         # save weights
         if not args.overfit:
@@ -447,7 +473,10 @@ def validate(
     # the same resolution and can be resized together to the ground truth
     # segmentation size.
 
-    for i, sample in enumerate(tqdm(valid_loader, desc="Valid step", leave=False)):
+    desc = "Valid step"
+    if is_train_loader:
+        desc = "Train Validation step"
+    for i, sample in enumerate(tqdm(valid_loader, desc=desc)):
         # copy the data to gpu
         image = sample["image"].to(device)
 
