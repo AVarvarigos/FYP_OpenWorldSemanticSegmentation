@@ -200,7 +200,7 @@ class OWLoss(nn.Module):
                     continue
                 acc_loss += ew_l1
 
-        return acc_loss
+        return torch.clamp(acc_loss, max=10, min=0.0)
 
     def update(self):
         self.previous_features = self.features
