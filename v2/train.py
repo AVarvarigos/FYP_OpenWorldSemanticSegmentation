@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.optim
 from sklearn.cluster import AgglomerativeClustering as ac
-from src import losses, utils
+from src import losses
 from src.args import ArgumentParser
 from src.build_model import build_model
 from src.prepare_data import prepare_data
@@ -117,22 +117,17 @@ def train_main():
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
 
     # loss functions
-    loss_function_train = utils.CrossEntropyLoss2d(
+    loss_function_train = losses.CrossEntropyLoss2d(
         weight=class_weighting, device=device
     )
     focal_loss = losses.FocalLoss()
     dice_loss = losses.DiceLoss()
-    loss_objectosphere = utils.ObjectosphereLoss()
-    loss_mav = utils.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
-    loss_contrastive = utils.ContrastiveLoss(n_classes=n_classes_without_void)
+    loss_objectosphere = losses.ObjectosphereLoss()
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
+    loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
 
-    pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
-        weight_mode="linear"
-    )
-    pixel_sum_valid_data_weighted = np.sum(pixel_sum_valid_data * class_weighting)
-    loss_function_valid = utils.CrossEntropyLoss2dForValidData(
+    loss_function_valid = losses.CrossEntropyLoss2dForValidData(
         weight=class_weighting,
-        weighted_pixel_sum=pixel_sum_valid_data_weighted,
         device=device,
     )
 

@@ -40,7 +40,7 @@ class CrossEntropyLoss2d(nn.Module):
         # print("inputs.shape", inputs.shape)
         # print(targets)
         # print(inputs)
-        loss_all = self.ce_loss(inputs, targets)
+        loss_all = self.ce_loss(inputs, targets.long())
         # if (self.weight == 1).all():
         divisor_weighted_pixel_sum = (targets >= 0).sum()
         # else:
@@ -51,7 +51,7 @@ class CrossEntropyLoss2d(nn.Module):
 
 
 class CrossEntropyLoss2dForValidData:
-    def __init__(self, device, weight, weighted_pixel_sum, void_label=-1):
+    def __init__(self, device, weight, void_label=-1):
         super(CrossEntropyLoss2dForValidData, self).__init__()
         self.ce_loss = nn.CrossEntropyLoss(
             torch.from_numpy(np.array(weight)).float(),
@@ -59,48 +59,53 @@ class CrossEntropyLoss2dForValidData:
             ignore_index=void_label,
         )
         self.ce_loss.to(device)
-        self.weighted_pixel_sum = weighted_pixel_sum
+        # self.weighted_pixel_sum = weighted_pixel_sum
         self.total_loss = 0
+        self.num_of_acc = 0
 
     def add_loss_of_batch(self, inputs, targets):
-        # targets_m = targets.clone()
-        # targets_m -= 1
-        loss = self.ce_loss(inputs, targets)
+        self.num_of_acc += 1
+
+        if (targets == -1).all():  # i.e. if all labels are void (-1)
+            return
+
+        loss = self.ce_loss(inputs, targets.long()) / (targets >= 0).sum()
         self.total_loss += loss
 
     def compute_whole_loss(self):
         return (
-            self.total_loss.detach().cpu().numpy().item()
-            / self.weighted_pixel_sum.item()
-        )
+            self.total_loss.detach().cpu().item()
+            / self.num_of_acc
+        ) if self.num_of_acc != 0 else 0
 
     def reset_loss(self):
         self.total_loss = 0
+        self.num_of_acc = 0
 
 
-class CrossEntropyLoss2dForValidDataUnweighted:
-    def __init__(self, device, void_label=-1):
-        super(CrossEntropyLoss2dForValidDataUnweighted, self).__init__()
-        self.ce_loss = nn.CrossEntropyLoss(
-            weight=None, reduction="sum", ignore_index=void_label
-        )
-        self.ce_loss.to(device)
-        self.nr_pixels = 0
-        self.total_loss = 0
+# class CrossEntropyLoss2dForValidDataUnweighted:
+#     def __init__(self, device, void_label=-1):
+#         super(CrossEntropyLoss2dForValidDataUnweighted, self).__init__()
+#         self.ce_loss = nn.CrossEntropyLoss(
+#             weight=None, reduction="sum", ignore_index=void_label
+#         )
+#         self.ce_loss.to(device)
+#         self.nr_pixels = 0
+#         self.total_loss = 0
 
-    def add_loss_of_batch(self, inputs, targets):
-        # targets_m = targets.clone()
-        # targets_m -= 1
-        loss = self.ce_loss(inputs, targets)
-        self.total_loss += loss
-        self.nr_pixels += torch.sum(targets >= 0)  # only non void pixels
+#     def add_loss_of_batch(self, inputs, targets):
+#         # targets_m = targets.clone()
+#         # targets_m -= 1
+#         loss = self.ce_loss(inputs, targets)
+#         self.total_loss += loss
+#         self.nr_pixels += torch.sum(targets >= 0)  # only non void pixels
 
-    def compute_whole_loss(self):
-        return (
-            self.total_loss.detach().cpu().numpy().item()
-            / self.nr_pixels.detach().cpu().numpy().item()
-        )
+#     def compute_whole_loss(self):
+#         return (
+#             self.total_loss.detach().cpu().numpy().item()
+#             / self.nr_pixels.detach().cpu().numpy().item()
+#         )
 
-    def reset_loss(self):
-        self.total_loss = 0
-        self.nr_pixels = 0
+#     def reset_loss(self):
+#         self.total_loss = 0
+#         self.nr_pixels = 0
