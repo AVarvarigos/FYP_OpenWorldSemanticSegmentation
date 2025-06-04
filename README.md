@@ -23,17 +23,6 @@ You can choose your favourite hyperparameters configuration in `args.py`. For tr
 
 The expected data structure is taken from Cityscapes. BDDAnomaly has been converted to Cityscapes format.
 
-## Cite
-
-Please cite us at
-```bibtex
-@inproceedings{sodano2024cvpr,
-    author = {Matteo Sodano and Federico Magistri and Lucas Nunes and Jens Behley and Cyrill Stachniss},
-    title = {{Open-World Semantic Segmentation Including Class Similarity}},
-    booktitle = {{Proc. of the IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR)}},
-    year = {2024}
-}
-=======
 Repo structure:
 ```
 📦 
