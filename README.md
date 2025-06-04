@@ -1,7 +1,73 @@
 ### Objective & Goals of Research
 In this project, we aim to improve on Open-World Segmentation (OWS) on Cityscapes dataset and BDDAnomaally dataset.
 
-We will be building on the work of _[Sodano et al.](https://arxiv.org/pdf/2403.07532)_.
+We are reproducing and extending the work of _[Sodano et al.](https://arxiv.org/pdf/2403.07532)_.
+
+Repo structure:
+```
+📦 
+├─ .gitignore
+├─ README.md
+├─ fyp
+│  ├─ .gitignore
+│  ├─ .vscode
+│  │  └─ launch.json
+│  ├─ README.md
+│  ├─ mavs.pickle
+│  ├─ overfitall.sh
+│  ├─ proprocessing_unknown_known.py
+│  ├─ requirements.yml
+│  ├─ scripts
+│  │  └─ run_all.pbs
+│  ├─ src
+│  │  ├─ __init__.py
+│  │  ├─ args.py
+│  │  ├─ build_model.py
+│  │  ├─ datasets
+│  │  │  ├─ __init__.py
+│  │  │  ├─ cityscapes
+│  │  │  │  ├─ README.md
+│  │  │  │  ├─ __init__.py
+│  │  │  │  ├─ cityscapes.py
+│  │  │  │  ├─ prepare_dataset.py
+│  │  │  │  ├─ pytorch_dataset.py
+│  │  │  │  ├─ requirements.txt
+│  │  │  │  ├─ weighting_linear_1+16_val.pickle
+│  │  │  │  ├─ weighting_linear_1+17_val.pickle
+│  │  │  │  ├─ weighting_linear_1+19_train.pickle
+│  │  │  │  ├─ weighting_linear_1+19_val.pickle
+│  │  │  │  ├─ weighting_linear_1+19_valid.pickle
+│  │  │  │  └─ weighting_median_frequency_1+19_train.pickle
+│  │  │  └─ dataset_base.py
+│  │  ├─ losses
+│  │  │  ├─ __init__.py
+│  │  │  ├─ ce_loss.py
+│  │  │  ├─ contrastive_loss.py
+│  │  │  ├─ dice_loss.py
+│  │  │  ├─ focal_loss.py
+│  │  │  ├─ objectosphere_loss.py
+│  │  │  └─ ow_loss.py
+│  │  ├─ models_v2
+│  │  │  ├─ __init__.py
+│  │  │  ├─ context_modules.py
+│  │  │  ├─ decoder.py
+│  │  │  ├─ model.py
+│  │  │  ├─ model_utils.py
+│  │  │  ├─ neck.py
+│  │  │  ├─ resnet.py
+│  │  │  └─ tru_for_decoder.py
+│  │  ├─ prepare_data.py
+│  │  ├─ preprocessing.py
+│  │  └─ utils.py
+│  ├─ start.sh
+│  ├─ train.py
+│  └─ vars.pickle
+├─ scripts
+│  ├─ downlioad_cityscapes.sh
+│  ├─ run.sh
+│  └─ run_all.pbs
+└─ vars.pickle
+```
 
 ### Original Model
 We implement the Encoder-Decoder architecture defined in the ContMAV paper. We initially use ResNet34 and train our model for 500 epochs using a learning rate of 0.004, as in the paper, on CityScapes Dataset.
@@ -36,8 +102,3 @@ Which is better?:
 - We use the known classes to generate hard negatives for the unknown classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
 - We also use the unknown classes to generate hard negatives for the known classes. This allows the model to learn to distinguish between the known and unknown classes, improving the performance of the model on the OWS task.
 
-### Tasks
-- Add New losses for decoder including Focal Loss, Focal Loss with Dice Loss DONE
-- Preprocess images to create a Dataset of known and unknown classes. All images should be of the same size
-- Retraing encoder with Infonce loss
-- Add hard negative sampling methods introduces in Synco
