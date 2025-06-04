@@ -1,7 +1,14 @@
+# Open-World Semantic Segmentation Including Class Similarity
+
+This is the code repository of the paper Open-World Semantic Segmentation Including Class Similarity, accepted to the IEEE / CVF Computer Vision and Pattern Recognition Conference (CVPR) 2024.
+
+You can find the paper [here](https://www.ipb.uni-bonn.de/wp-content/papercite-data/pdf/sodano2024cvpr.pdf).
+
 ### Objective & Goals of Research
 In this project, we aim to improve on Open-World Segmentation (OWS) on Cityscapes dataset and BDDAnomaally dataset.
 
 We are reproducing and extending the work of _[Sodano et al.](https://arxiv.org/pdf/2403.07532)_.
+
 
 ## Installation
 
@@ -16,6 +23,17 @@ You can choose your favourite hyperparameters configuration in `args.py`. For tr
 
 The expected data structure is taken from Cityscapes. BDDAnomaly has been converted to Cityscapes format.
 
+## Cite
+
+Please cite us at
+```bibtex
+@inproceedings{sodano2024cvpr,
+    author = {Matteo Sodano and Federico Magistri and Lucas Nunes and Jens Behley and Cyrill Stachniss},
+    title = {{Open-World Semantic Segmentation Including Class Similarity}},
+    booktitle = {{Proc. of the IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR)}},
+    year = {2024}
+}
+=======
 Repo structure:
 ```
 📦 
