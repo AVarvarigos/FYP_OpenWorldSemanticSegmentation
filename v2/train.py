@@ -395,7 +395,7 @@ def train_one_epoch(
         # Update progress bar
         progress_bar.set_postfix({
             'batch_loss': f'{losses["total"]:.4f}',
-            'lr': f'{learning_rates[0]:.4f}'
+            'lr': f'{learning_rates[0]:.6f}'
         })
 
         # print_log(
@@ -730,16 +730,16 @@ def plot_metrics(metric_data, metric_name, epochs, save_path):
 def plot_images(
     epoch, sample, image, mavs, var, prediction_ss,
     prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True
+    plot_path='./plots', use_mav=True, delta=0.6
 ):
     # if plot_results and i < 1:  # Limit to first 8 samples for visualization
     # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
-    fig, axes = plt.subplots(9, 5, figsize=(16, 24))  # One extra row for column names
+    fig, axes = plt.subplots(9, 6, figsize=(16, 24))  # One extra row for column names
 
     var = {k: v.detach().clone() for k, v in var.items()}
 
     # Add column names in the first row
-    column_names = ["Image", "Prediction (SS)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
+    column_names = ["Image", "Prediction (SS)", "Logits (OW)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
     for col_idx, col_name in enumerate(column_names):
         axes[0, col_idx].text(
             0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
@@ -755,8 +755,10 @@ def plot_images(
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
         s_unk = (s_unk + s_sem) / 2
-    pred_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    pred_ow = (s_unk - delta).relu().bool().int()
     pred_ow_np = pred_ow.cpu().numpy()
+    logits_ow_np = logits_ow.cpu().numpy()
 
     # Add images in the subsequent rows
     for idx in range(8):  # Limit to 8 rows of images
@@ -798,6 +800,7 @@ def plot_images(
 
         # if use_mav:
         pred_ow_np_i = pred_ow_np[idx]
+        logits_ow_np_i = logits_ow_np[idx]
 
         # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
         axes[idx + 1, 0].imshow(image_np)
@@ -807,14 +810,18 @@ def plot_images(
         axes[idx + 1, 1].axis("off")
 
         # if use_mav:
-        axes[idx + 1, 2].imshow(pred_ow_np_i)
+        axes[idx + 1, 2].imshow(logits_ow_np_i)
         axes[idx + 1, 2].axis("off")
 
-        axes[idx + 1, 3].imshow(target_c)
+        # if use_mav:
+        axes[idx + 1, 3].imshow(pred_ow_np_i)
         axes[idx + 1, 3].axis("off")
 
-        axes[idx + 1, 4].imshow(ows_binary_gt)
+        axes[idx + 1, 4].imshow(target_c)
         axes[idx + 1, 4].axis("off")
+
+        axes[idx + 1, 5].imshow(ows_binary_gt)
+        axes[idx + 1, 5].axis("off")
 
     # Save the plot
     plot_dir = plot_path  # Ensure this is the directory path
