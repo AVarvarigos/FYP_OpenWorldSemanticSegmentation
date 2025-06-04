@@ -32,7 +32,7 @@ class CrossEntropyLoss2d(nn.Module):
     def forward(self, inputs, targets):
         # targets_m = targets.clone()
         if (targets == -1).all():  # i.e. if all labels are void (-1)
-            return [torch.tensor(0.0).cuda()]
+            return torch.tensor(0.0).cuda()
             # import ipdb;ipdb.set_trace()  # fmt: skip
         # targets_m -= 1
         # assert (targets - 1 >= 0).all()

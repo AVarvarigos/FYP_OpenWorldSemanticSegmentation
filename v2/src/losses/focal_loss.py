@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 class FocalLoss(nn.Module):
     """
@@ -11,13 +10,12 @@ class FocalLoss(nn.Module):
 
     see https://github.com/clcarwin/focal_loss_pytorch/blob/e11e75bad957aecf641db6998a1016204722c1bb/focalloss.py
     """
-    def __init__(self, gamma=2.0, alpha=0.25, size_average=True, void_label=-1):
+    def __init__(self, alpha, gamma=2.0, size_average=True, void_label=-1):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
         self.void_label = void_label
-        if isinstance(alpha,(float,int)): self.alpha = torch.Tensor([alpha,1-alpha])
-        if isinstance(alpha,list): self.alpha = torch.Tensor(alpha)
+        self.alpha = torch.FloatTensor(alpha)
         self.size_average = size_average
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
@@ -38,16 +36,15 @@ class FocalLoss(nn.Module):
         input_valid = input[valid_mask]
         target_valid = target[valid_mask].unsqueeze(1)
 
-        logpt = F.log_softmax(input_valid)
-        logpt = logpt.gather(1,target)
+        logpt = F.log_softmax(input_valid, dim=-1)
+        logpt = logpt.gather(1,target_valid)
         logpt = logpt.view(-1)
-        pt = Variable(logpt.data.exp())
+        pt = logpt.exp()
 
         if self.alpha is not None:
-            if self.alpha.type()!=input_valid.data.type():
-                self.alpha = self.alpha.type_as(input_valid.data)
-            at = self.alpha.gather(0,target_valid.data.view(-1))
-            logpt = logpt * Variable(at)
+            alpha = self.alpha.to(input_valid.device)
+            at = alpha.gather(0,target_valid.view(-1))
+            logpt = logpt * at
 
         loss = -1 * (1-pt)**self.gamma * logpt
         if self.size_average: return loss.mean()

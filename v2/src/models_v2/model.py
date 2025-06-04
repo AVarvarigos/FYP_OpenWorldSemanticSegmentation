@@ -90,6 +90,7 @@ class OWSNetwork(nn.Module):
             )
 
         # Freeze the backbone
+        # TODO: Is this necessary?
         for name, param in self.encoder.named_parameters():
             param.requires_grad = False
 

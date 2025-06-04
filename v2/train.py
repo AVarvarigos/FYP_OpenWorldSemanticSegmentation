@@ -29,6 +29,7 @@ from torch.functional import F
 from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
+from torchmetrics import Recall, Precision, F1Score, AveragePrecision
 from tqdm import tqdm
 
 import wandb
@@ -122,10 +123,10 @@ def train_main():
 
     # loss functions
     loss_function_train = losses.CrossEntropyLoss2d(weight=class_weighting, device=device)
-    focal_loss = losses.FocalLoss()
+    focal_loss = losses.FocalLoss(alpha=class_weighting)
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
-    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir, applied=False)
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
 
     # pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
@@ -231,7 +232,7 @@ def train_main():
             plot_path=os.path.join(ckpt_dir, "val_results")
         )
 
-        miou = validate(
+        train_miou = validate(
             model=model,
             var=var,
             valid_loader=train_loader,
@@ -288,6 +289,7 @@ def train_one_epoch(
     writer,
     debug_mode=False,
 ):
+    # lr_scheduler.step(epoch)
     samples_of_epoch = 0
 
     # set model to train mode
@@ -306,14 +308,14 @@ def train_one_epoch(
         "ows": 0.1,
         "contrastive": 0.5,
         "dice": 0.5,
-        "focal": 0.9,
+        "focal": 3.0,
     }
 
     mavs = None
     if epoch and loss_contrastive is not None:
         mavs = loss_mav.read()
 
-    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}", leave=False)
+    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
     for sample in progress_bar:
         start_time_for_one_step = time.time()
 
@@ -336,7 +338,7 @@ def train_one_epoch(
         pred_scales, ow_res = model(image)
         # cw_target = label_ss.clone()
         # cw_target[cw_target > 15] = -1
-        loss = loss_function_train(pred_scales, label)
+        loss = loss_function_train(pred_scales, label.clone().cuda())
         # label = sample["label"].long().cuda()
         # label[label < 0] = 255
 
@@ -350,15 +352,16 @@ def train_one_epoch(
         }
 
         if losses["focal"] is not None:
-            losses["focal"] = losses["focal"](pred_scales, label)
+            losses["focal"] = losses["focal"](pred_scales, label.clone().cuda())
+            losses.pop("segmentation", None)  # focal loss replaces segmentation loss
         if losses["dice"] is not None:
-            losses["dice"] = losses["dice"](pred_scales, label)
+            losses["dice"] = losses["dice"](pred_scales, label.clone().cuda())
         if losses["objectsphere"] is not None:
-            losses["objectsphere"] = losses["objectsphere"](ow_res, label)
+            losses["objectsphere"] = losses["objectsphere"](ow_res, label.clone().cuda())
         if losses["ows"] is not None:
-            losses["ows"] = losses["ows"](pred_scales, label, is_train=True)
+            losses["ows"] = losses["ows"](pred_scales, label.clone().cuda(), is_train=True)
         if losses["contrastive"] is not None:
-            losses["contrastive"] = losses["contrastive"](mavs, ow_res, label, epoch)
+            losses["contrastive"] = losses["contrastive"](mavs, ow_res, label.clone().cuda(), epoch)
 
         losses = {
             loss_name: loss_item
@@ -392,7 +395,7 @@ def train_one_epoch(
         # Update progress bar
         progress_bar.set_postfix({
             'batch_loss': f'{losses["total"]:.4f}',
-            'lr': f'{learning_rates[0]:.4f}'
+            'lr': f'{learning_rates[0]:.6f}'
         })
 
         # print_log(
@@ -464,6 +467,18 @@ def validate(
     compute_iou = IoU(
         task="multiclass", num_classes=classes, average="none", ignore_index=255
     ).to(device)
+    compute_recall = Recall(
+        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+    ).to(device)
+    compute_precision = Precision(
+        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+    ).to(device)
+    compute_f1 = F1Score(
+        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+    ).to(device)
+    compute_auprc = AveragePrecision(
+        task="multiclass", num_classes=classes, average="none", ignore_index=255
+    ).to(device)
 
     mavs = None
     if loss_contrastive is not None:
@@ -478,7 +493,10 @@ def validate(
     # the same resolution and can be resized together to the ground truth
     # segmentation size.
 
-    for i, sample in enumerate(tqdm(valid_loader, desc="Valid step", leave=False)):
+    desc = "Valid step"
+    if is_train_loader:
+        desc = "Train Validation step"
+    for i, sample in enumerate(tqdm(valid_loader, desc=desc)):
         # copy the data to gpu
         image = sample["image"].to(device)
 
@@ -497,6 +515,10 @@ def validate(
             target_iou = target.clone()
             target_iou[target_iou == -1] = 255
             compute_iou.update(prediction_ss, target_iou)
+            compute_recall.update(prediction_ss, target_iou)
+            compute_precision.update(prediction_ss, target_iou)
+            compute_f1.update(prediction_ss, target_iou)
+            compute_auprc.update(prediction_ss, target_iou)
 
             if epoch % 3 == 0 and i == 0 and plot_results:
                 plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
@@ -538,6 +560,18 @@ def validate(
     ious = compute_iou.compute().detach().cpu()
     miou = ious.mean()
 
+    recall = compute_recall.compute().detach().cpu()
+    m_recall = recall.mean()
+
+    precision = compute_precision.compute().detach().cpu()
+    m_precision = precision.mean()
+
+    f1 = compute_f1.compute().detach().cpu()
+    m_f1 = f1.mean()
+
+    auprc = compute_auprc.compute().detach().cpu()
+    m_auprc = auprc.mean()
+
     total_loss = (
         loss_function_valid.compute_whole_loss()
         + np.mean(total_loss_obj)
@@ -546,24 +580,39 @@ def validate(
         + np.mean(total_loss_focal)
         + np.mean(total_loss_dice)
     )
-    if is_train_loader:
-        writer.add_scalar("Training/Loss", total_loss, epoch)
-        writer.add_scalar("Training/miou", miou, epoch)
-        for i, iou in enumerate(ious):
-            writer.add_scalar(
-                "Training/Class_metrics/iou_{}".format(i),
-                torch.mean(iou),
-                epoch,
-            )
-    else:       
-        writer.add_scalar("Validation/Loss", total_loss, epoch)
-        writer.add_scalar("Validation/miou", miou, epoch)
-        for i, iou in enumerate(ious):
-            writer.add_scalar(
-                "Validation/Class_metrics/iou_{}".format(i),
-                torch.mean(iou),
-                epoch,
-            )
+    prefix = "Train" if is_train_loader else "Valid"
+    writer.add_scalar(f"{prefix}/Loss", total_loss, epoch)
+    writer.add_scalar(f"{prefix}/miou", miou, epoch)
+    writer.add_scalar(f"{prefix}/average_recall", m_recall, epoch)
+    writer.add_scalar(f"{prefix}/average_precision", m_precision, epoch)
+    writer.add_scalar(f"{prefix}/average_f1", m_f1, epoch)
+    writer.add_scalar(f"{prefix}/average_auprc", m_auprc, epoch)
+    for i, iou in enumerate(ious):
+        writer.add_scalar(
+            f"{prefix}/Class_metrics/iou_{i}",
+            torch.mean(iou),
+            epoch,
+        )
+        writer.add_scalar(
+            f"{prefix}/Class_metrics/recall_{i}",
+            torch.mean(recall[i]),
+            epoch,
+        )
+        writer.add_scalar(
+            f"{prefix}/Class_metrics/precision_{i}",
+            torch.mean(precision[i]),
+            epoch,
+        )
+        writer.add_scalar(
+            f"{prefix}/Class_metrics/f1_{i}",
+            torch.mean(f1[i]),
+            epoch
+        )
+        writer.add_scalar(
+            f"{prefix}/Class_metrics/auprc_{i}",
+            torch.mean(auprc[i]),
+            epoch
+        )
 
     return miou
 
@@ -681,16 +730,16 @@ def plot_metrics(metric_data, metric_name, epochs, save_path):
 def plot_images(
     epoch, sample, image, mavs, var, prediction_ss,
     prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True
+    plot_path='./plots', use_mav=True, delta=0.6
 ):
     # if plot_results and i < 1:  # Limit to first 8 samples for visualization
     # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
-    fig, axes = plt.subplots(9, 5, figsize=(16, 24))  # One extra row for column names
+    fig, axes = plt.subplots(9, 6, figsize=(16, 24))  # One extra row for column names
 
     var = {k: v.detach().clone() for k, v in var.items()}
 
     # Add column names in the first row
-    column_names = ["Image", "Prediction (SS)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
+    column_names = ["Image", "Prediction (SS)", "Logits (OW)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
     for col_idx, col_name in enumerate(column_names):
         axes[0, col_idx].text(
             0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
@@ -706,8 +755,10 @@ def plot_images(
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
         s_unk = (s_unk + s_sem) / 2
-    pred_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    pred_ow = (s_unk - delta).relu().bool().int()
     pred_ow_np = pred_ow.cpu().numpy()
+    logits_ow_np = logits_ow.cpu().numpy()
 
     # Add images in the subsequent rows
     for idx in range(8):  # Limit to 8 rows of images
@@ -749,6 +800,7 @@ def plot_images(
 
         # if use_mav:
         pred_ow_np_i = pred_ow_np[idx]
+        logits_ow_np_i = logits_ow_np[idx]
 
         # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
         axes[idx + 1, 0].imshow(image_np)
@@ -758,14 +810,18 @@ def plot_images(
         axes[idx + 1, 1].axis("off")
 
         # if use_mav:
-        axes[idx + 1, 2].imshow(pred_ow_np_i)
+        axes[idx + 1, 2].imshow(logits_ow_np_i)
         axes[idx + 1, 2].axis("off")
 
-        axes[idx + 1, 3].imshow(target_c)
+        # if use_mav:
+        axes[idx + 1, 3].imshow(pred_ow_np_i)
         axes[idx + 1, 3].axis("off")
 
-        axes[idx + 1, 4].imshow(ows_binary_gt)
+        axes[idx + 1, 4].imshow(target_c)
         axes[idx + 1, 4].axis("off")
+
+        axes[idx + 1, 5].imshow(ows_binary_gt)
+        axes[idx + 1, 5].axis("off")
 
     # Save the plot
     plot_dir = plot_path  # Ensure this is the directory path
