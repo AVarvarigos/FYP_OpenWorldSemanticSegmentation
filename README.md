@@ -3,6 +3,19 @@ In this project, we aim to improve on Open-World Segmentation (OWS) on Cityscape
 
 We are reproducing and extending the work of _[Sodano et al.](https://arxiv.org/pdf/2403.07532)_.
 
+## Installation
+
+Install the libraries of the `requirements.yml`, or create a conda environment by `conda env create -f requirements.yml` and then `conda activate openworld`.
+
+The weights of ResNet34 with NonBottleneck 1D block pretrained on ImageNet are available [here](https://drive.google.com/drive/folders/1goULJjHp5-M7nUGlC52uvWaQxn2j3Za1?usp=sharing).
+
+## Training
+
+You can choose your favourite hyperparameters configuration in `args.py`. For training, run
+`python train.py --id <your_id> --dataset_dir <your_data_dir> --num_classes <N> --batch_size 8`.
+
+The expected data structure is taken from Cityscapes. BDDAnomaly has been converted to Cityscapes format.
+
 Repo structure:
 ```
 📦 
