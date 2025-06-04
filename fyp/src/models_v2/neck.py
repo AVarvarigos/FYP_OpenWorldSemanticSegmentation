@@ -126,3 +126,19 @@ class AdaptivePyramidPoolingModule(nn.Module):
         out = torch.cat(out, 1)
         out = self.final_conv(out)
         return out
+        
+class SqueezeAndExcitation(nn.Module):
+    def __init__(self, in_dim, reduction=16):
+        super(SqueezeAndExcitation, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Conv2d(in_dim, in_dim // reduction, kernel_size=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_dim // reduction, in_dim, kernel_size=1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        weighting = F.adaptive_avg_pool2d(x, 1)
+        weighting = self.fc(weighting)
+        y = x * weighting
+        return y

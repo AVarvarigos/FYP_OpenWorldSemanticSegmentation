@@ -15,6 +15,7 @@ from src.models_v2.context_modules import get_context_module
 from src.models_v2.model_utils import ConvBNAct, Swish, Hswish
 from src.models_v2.decoder import Decoder
 from src.models_v2.tru_for_decoder import TruForDecoderHead
+from src.models_v2.neck import SqueezeAndExcitation
 
 
 class OWSNetwork(nn.Module):
@@ -35,7 +36,10 @@ class OWSNetwork(nn.Module):
         nr_decoder_blocks=None,  # default: [1, 1, 1]
         weighting_in_encoder="None",
         upsampling="bilinear",
-        tru_for_decoder=False
+        tru_for_decoder=False,
+        # neck: SE
+        use_se=True,
+        reduction=16,
     ):
         super(OWSNetwork, self).__init__()
         if channels_decoder is None:
@@ -96,11 +100,11 @@ class OWSNetwork(nn.Module):
 
         self.channels_decoder_in = self.encoder.down_32_channels_out
 
-        self.se_layer0 = nn.Identity()
-        self.se_layer1 = nn.Identity()
-        self.se_layer2 = nn.Identity()
-        self.se_layer3 = nn.Identity()
-        self.se_layer4 = nn.Identity()
+        self.se_layer0 = SqueezeAndExcitation(self.encoder.down_2_channels_out, reduction) if use_se else nn.Identity()
+        self.se_layer1 = SqueezeAndExcitation(self.encoder.down_4_channels_out, reduction) if use_se else nn.Identity()
+        self.se_layer2 = SqueezeAndExcitation(self.encoder.down_8_channels_out, reduction) if use_se else nn.Identity()
+        self.se_layer3 = SqueezeAndExcitation(self.encoder.down_16_channels_out, reduction) if use_se else nn.Identity()
+        self.se_layer4 = SqueezeAndExcitation(self.encoder.down_32_channels_out, reduction) if use_se else nn.Identity()
 
         if encoder_decoder_fusion == "add":
             layers_skip1 = list()
