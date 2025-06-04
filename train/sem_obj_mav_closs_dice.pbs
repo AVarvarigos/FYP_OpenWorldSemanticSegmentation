@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -lselect=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -lwalltime=72:00:00
+#PBS -j oe
+
+cd $PBS_O_WORKDIR
+cd ..
+
+eval "$(~/anaconda3/bin/conda shell.bash hook)"
+source activate torch
+pip install wandb
+
+
+echo "Job started on: $(date)"
+
+export WANDB_API_KEY=d9dffbd4b2965046a9a7db738d8562de2ea38023
+
+# Change to the project directory
+cd $HOME/code/owss/fyp
+python train.py \
+  --id sem_obj_mav_closs_dice \
+  --dataset_dir $HOME/code/owss/datasets/cityscapes \
+  --pretrained_dir $HOME/code/owss/trained_models/imagenet \
+  --num_classes 19 --batch_size 8 \
+  --class_weighting median_frequency \
+  --loss_weights 1,1,1,1 \
+  --workers 10 \
+  --encoder resnet34 \
+  --encoder_block NonBottleneck1D \
+  --plot_results true \
+  --lr 0.0005 \
+  --obj true \
+  --mav true \
+  --closs true \
+  --dice true \
+  --tru_for true
+
+echo "Job completed on: $(date)"
+

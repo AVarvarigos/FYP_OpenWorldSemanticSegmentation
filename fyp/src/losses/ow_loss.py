@@ -152,28 +152,4 @@ class OWLoss(nn.Module):
             mav_tensor[key] = self.previous_features[key]
         return mav_tensor
 
-# ce loss
-# focal loss
-# ce loss + objectosphere
-# ce loss + objectosphere + contrastive
-# focal loss - ce loss plus objectosphere
-# focal loss - ce loss plus contrastive
-# all with focal loss
-# all ce loss
-# all with dice loss and focal loss
-# all with dice loss and ce loss
-# to the best performing of the above add Tru-For
 
-### Future work
-# to the best performing run for different encoder size just bigger
-# to the best one synco 
-# with momentum
-
-### Prepare runs on Cluster
-# 1. Create seprate dirs for each
-# 2. Upload plot images to wandb
-# 3. Upload all the files to wandb
-# 4. Prepare zip file containing all post processed data
-# 5. Upload zip file to cloud
-# 6. prepare link for download
-# 7. prepare some form of upload of final model
