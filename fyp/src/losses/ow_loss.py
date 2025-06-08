@@ -16,8 +16,6 @@ import json
 class OWLoss(nn.Module):
     def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1, save_dir=None, applied=True):
         super().__init__()
-        # used as a scheduler for the weighting of the loss
-        self.current_weighting = 0.1
         self.smooth = 1e-2
         self.n_classes = n_classes
         self.hinged = hinged
@@ -46,6 +44,8 @@ class OWLoss(nn.Module):
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
+        if not hasattr(self, 'smooth'):
+            self.smooth = 1e-2
         sem_pred = torch.argmax(torch.softmax(logits, dim=1), dim=1)
         gt_labels = torch.unique(sem_gt).tolist()
         logits_permuted = logits.permute(0, 2, 3, 1)
@@ -111,9 +111,7 @@ class OWLoss(nn.Module):
                     continue
                 acc_loss += ew_l1
 
-        acc_loss *= self.current_weighting
-
-        return torch.clamp(acc_loss, max=50, min=0.0)
+        return torch.clamp(acc_loss, max=20, min=0.0)
 
     def update(self):
         self.previous_features = self.features
@@ -141,8 +139,6 @@ class OWLoss(nn.Module):
         self.features = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
         self.ex = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
         self.ex2 = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-
-        self.current_weighting = 0.1 * 10 ** min(self.epoch/100, 1)
 
         return self.previous_features, self.var
 
