@@ -13,7 +13,11 @@ import torch.nn.functional as F
 from src.models_v2.model_utils import ConvBNAct
 
 
-__all__ = ["PyramidPoolingModule", "AdaptivePyramidPoolingModule", "SqueezeAndExcitation"]
+__all__ = [
+    "PyramidPoolingModule",
+    "AdaptivePyramidPoolingModule",
+    "SqueezeAndExcitation",
+]
 
 
 class PyramidPoolingModule(nn.Module):
@@ -126,7 +130,8 @@ class AdaptivePyramidPoolingModule(nn.Module):
         out = torch.cat(out, 1)
         out = self.final_conv(out)
         return out
-        
+
+
 class SqueezeAndExcitation(nn.Module):
     def __init__(self, in_dim, reduction=16):
         super(SqueezeAndExcitation, self).__init__()

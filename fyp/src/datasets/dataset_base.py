@@ -135,7 +135,7 @@ class DatasetBase(abc.ABC, Dataset):
         # build filename
         class_weighting_filepath = os.path.join(
             self.source_path,
-            f"weighting_{weight_mode}_" f"1+{self.n_classes_without_void}",
+            f"weighting_{weight_mode}_1+{self.n_classes_without_void}",
         )
         if weight_mode == "logarithmic":
             class_weighting_filepath += f"_c={c}"
@@ -163,7 +163,7 @@ class DatasetBase(abc.ABC, Dataset):
             class_in_image = current_dist > 0
             n_image_pixels_with_class += class_in_image * h * w
 
-            print(f"\r{i+1}/{len(self)}", end="")
+            print(f"\r{i + 1}/{len(self)}", end="")
         print()
 
         # remove void

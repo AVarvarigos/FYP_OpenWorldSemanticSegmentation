@@ -64,7 +64,7 @@ class BasicBlock(nn.Module):
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
-            raise ValueError("BasicBlock only supports groups=1 and " "base_width=64")
+            raise ValueError("BasicBlock only supports groups=1 and base_width=64")
         # Both self.conv1 and self.downsample layers downsample the input
         # when stride != 1
         self.conv1 = conv3x3(inplanes, planes, stride, dilation=dilation)
@@ -271,9 +271,9 @@ class ResNet(nn.Module):
             dilation = dilation
             if len(dilation) != 4:
                 raise ValueError(
-                    "dilation should be None "
-                    "or a 4-element tuple, got "
-                    "{}".format(dilation)
+                    "dilation should be None or a 4-element tuple, got {}".format(
+                        dilation
+                    )
                 )
         else:
             dilation = [1, 1, 1, 1]
@@ -513,7 +513,7 @@ def ResNet34(
             kwargs["block"] = globals()[kwargs["block"]]
         else:
             raise NotImplementedError(
-                "Block {} is not implemented" "".format(kwargs["block"])
+                "Block {} is not implemented".format(kwargs["block"])
             )
     if "input_channels" in kwargs and kwargs["input_channels"] == 1:
         input_channels = 1
@@ -569,7 +569,6 @@ def load_pretrained_with_different_encoder_block(
     resnet_name,
     pretrained_dir="./trained_models/imagenet",
 ):
-
     ckpt_path = os.path.join(pretrained_dir, f"{resnet_name}_NBt1D.pth")
 
     if not os.path.exists(ckpt_path):

@@ -31,12 +31,12 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument(
             "--pretrained_dir",
             default="./trained_models/imagenet",
-            help="path to the pretrained resnets with different" "encoder block",
+            help="path to the pretrained resnets with differentencoder block",
         )
         self.add_argument(
             "--id",
             default="checkpoint",
-            help="path to the pretrained resnets with different" "encoder block",
+            help="path to the pretrained resnets with differentencoder block",
         )
 
         # pretraining
@@ -89,8 +89,7 @@ class ArgumentParser(argparse.ArgumentParser):
             "--width",
             type=int,
             default=1024,
-            help="width of the training images. "
-            "Images will be resized to this width.",
+            help="width of the training images. Images will be resized to this width.",
         )
 
         # epochs
@@ -150,7 +149,7 @@ class ArgumentParser(argparse.ArgumentParser):
             "--valid_full_res",
             default=True,
             action="store_true",
-            help="Whether to validate on the full resolution " "(for cityscapes).",
+            help="Whether to validate on the full resolution (for cityscapes).",
         )
 
         # model
@@ -261,13 +260,13 @@ class ArgumentParser(argparse.ArgumentParser):
             "--aug_scale_min",
             default=0.5,
             type=float,
-            help="the minimum scale for random rescaling the " "training data.",
+            help="the minimum scale for random rescaling the training data.",
         )
         self.add_argument(
             "--aug_scale_max",
             default=2.0,
             type=float,
-            help="the maximum scale for random rescaling the " "training data.",
+            help="the maximum scale for random rescaling the training data.",
         )
         self.add_argument(
             "--overfit",

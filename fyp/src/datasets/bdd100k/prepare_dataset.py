@@ -141,15 +141,15 @@ if __name__ == "__main__":
         for s in Bdd100kBase.SPLITS
     }
 
-    rgb_filepaths_by_basename = {
-        get_basename(fp): fp for fp in rgb_filepaths
-    }
-    label_filepaths_by_basename = {
-        get_basename(fp): fp for fp in label_filepaths
-    }
+    rgb_filepaths_by_basename = {get_basename(fp): fp for fp in rgb_filepaths}
+    label_filepaths_by_basename = {get_basename(fp): fp for fp in label_filepaths}
 
-    assert len([fp for fp in rgb_filepaths_by_basename if fp in basenames]) == len(basenames)
-    assert len([fp for fp in label_filepaths_by_basename if fp in basenames]) == len(basenames)
+    assert len([fp for fp in rgb_filepaths_by_basename if fp in basenames]) == len(
+        basenames
+    )
+    assert len([fp for fp in label_filepaths_by_basename if fp in basenames]) == len(
+        basenames
+    )
 
     # copy rgb images
     print("Copying rgb files")
@@ -184,9 +184,7 @@ if __name__ == "__main__":
         label_full += 1
 
         # full: 1+19 classes (original label file -> just copy file)
-        dest_path = os.path.join(
-            args.output_path, subset, Bdd100kBase.LABELS_DIR
-        )
+        dest_path = os.path.join(args.output_path, subset, Bdd100kBase.LABELS_DIR)
         os.makedirs(dest_path, exist_ok=True)
         # print(l_fp, '->', os.path.join(dest_path, basename))
         img = Image.fromarray(np.asarray(label_full, dtype="uint8"))

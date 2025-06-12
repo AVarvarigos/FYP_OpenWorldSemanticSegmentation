@@ -56,9 +56,10 @@ class CrossEntropyLoss2dForValidData:
 
     def compute_whole_loss(self):
         return (
-            self.total_loss.detach().cpu().item()
-            / self.num_of_acc
-        ) if self.num_of_acc != 0 else 0
+            (self.total_loss.detach().cpu().item() / self.num_of_acc)
+            if self.num_of_acc != 0
+            else 0
+        )
 
     def reset_loss(self):
         self.total_loss = 0

@@ -58,7 +58,7 @@ def build_model(args, n_classes):
         nr_decoder_blocks=nr_decoder_blocks,
         channels_decoder=channels_decoder,
         upsampling=args.upsampling,
-        tru_for_decoder=args.tru_for
+        tru_for_decoder=args.tru_for,
     )
 
     if torch.cuda.is_available():

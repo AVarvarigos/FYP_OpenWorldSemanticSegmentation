@@ -25,12 +25,12 @@ class ContrastiveLoss(nn.Module):
         """
         if not epoch:
             return torch.tensor(0.0).cuda()
-    
+
         total_loss = torch.tensor(0.0).cuda()
-        assert (emb_q.shape[0] == labels.shape[0]), "mismatch on emb_q and labels shapes!"
+        assert emb_q.shape[0] == labels.shape[0], "mismatch on emb_q and labels shapes!"
         emb_k = F.normalize(emb_k, dim=-1)
         emb_q = F.normalize(emb_q, dim=1)
-    
+
         for i, emb in enumerate(emb_q):
             label = labels[i]
             if not (self.void_label in label.unique() and len(label.unique()) == 1):

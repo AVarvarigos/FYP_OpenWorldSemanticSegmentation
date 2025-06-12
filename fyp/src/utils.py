@@ -109,5 +109,5 @@ def get_best_checkpoint(ckpt_dir, key="mIoU_test"):
         ckpt_path = os.path.join(ckpt_dir, f"ckpt_epoch_{epoch}.pth")
     assert ckpt_path is not None, f"No trainings found at {ckpt_dir}"
     assert os.path.exists(ckpt_path), f"There is no weights file named {ckpt_path}"
-    print(f"Best mIoU: {100*miou:0.2f} at epoch: {epoch}")
+    print(f"Best mIoU: {100 * miou:0.2f} at epoch: {epoch}")
     return ckpt_path

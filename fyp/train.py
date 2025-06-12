@@ -97,14 +97,16 @@ def train_main():
         class_weighting = np.ones(n_classes_without_void)
     # model building -----------------------------------------------------------
     model, device = build_model(args, n_classes=n_classes_without_void)
-    
+
     # Print initial model parameter info
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = count_trainable_parameters(model)
     print(f"\n📊 MODEL PARAMETERS:")
-    print(f"   Total: {total_params/1_000_000:.2f}M parameters")
-    print(f"   Trainable: {trainable_params/1_000_000:.2f}M parameters ({100*trainable_params/total_params:.1f}%)")
-    
+    print(f"   Total: {total_params / 1_000_000:.2f}M parameters")
+    print(
+        f"   Trainable: {trainable_params / 1_000_000:.2f}M parameters ({100 * trainable_params / total_params:.1f}%)"
+    )
+
     if args.freeze > 0:
         print("Freeze everything but the output layer(s).")
         for name, param in model.named_parameters():
@@ -113,14 +115,18 @@ def train_main():
 
         # Print parameters after freezing
         trainable_after_freeze = count_trainable_parameters(model)
-        print(f"   After freezing: {trainable_after_freeze/1_000_000:.2f}M trainable parameters ({100*trainable_after_freeze/total_params:.1f}%)")
+        print(
+            f"   After freezing: {trainable_after_freeze / 1_000_000:.2f}M trainable parameters ({100 * trainable_after_freeze / total_params:.1f}%)"
+        )
         print(f"   Will unfreeze at epoch {args.freeze}")
     print()
 
     # loss, optimizer, learning rate scheduler, csvlogger  ----------
 
     # loss functions
-    loss_function_train = losses.CrossEntropyLoss2d(weight=class_weighting, device=device)
+    loss_function_train = losses.CrossEntropyLoss2d(
+        weight=class_weighting, device=device
+    )
     focal_loss = losses.FocalLoss(alpha=class_weighting)
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
@@ -131,8 +137,22 @@ def train_main():
         device=device,
     )
 
-    train_loss = [loss_function_train, loss_objectosphere, loss_mav, loss_contrastive, focal_loss, dice_loss]
-    val_loss = [loss_function_valid, loss_objectosphere, loss_mav, loss_contrastive, focal_loss, dice_loss]
+    train_loss = [
+        loss_function_train,
+        loss_objectosphere,
+        loss_mav,
+        loss_contrastive,
+        focal_loss,
+        dice_loss,
+    ]
+    val_loss = [
+        loss_function_valid,
+        loss_objectosphere,
+        loss_mav,
+        loss_contrastive,
+        focal_loss,
+        dice_loss,
+    ]
     if not args.obj:
         train_loss[1] = None
         val_loss[1] = None
@@ -153,7 +173,7 @@ def train_main():
 
     lr_scheduler = ReduceLROnPlateau(
         optimizer,
-        mode='min',
+        mode="min",
         factor=0.5,
         patience=10,
     )
@@ -161,8 +181,8 @@ def train_main():
     # load checkpoint if parameter last_ckpt is provided
     if args.last_ckpt:
         ckpt_path = args.last_ckpt
-        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss = load_ckpt(
-            model, optimizer, ckpt_path, device
+        epoch_last_ckpt, best_miou, best_miou_epoch, mav_dict, std_dict, ows_loss = (
+            load_ckpt(model, optimizer, ckpt_path, device)
         )
         start_epoch = epoch_last_ckpt + 1
         train_loss[2] = ows_loss
@@ -206,7 +226,7 @@ def train_main():
             writer=writer,
             classes=args.num_classes,
             plot_results=args.plot_results,
-            plot_path=os.path.join(ckpt_dir, "val_results")
+            plot_path=os.path.join(ckpt_dir, "val_results"),
         )
 
         writer.flush()
@@ -215,7 +235,15 @@ def train_main():
         if not args.overfit:
             # save / overwrite latest weights (useful for resuming training)
             save_ckpt_every_epoch(
-                ckpt_dir, model, optimizer, epoch, best_miou, best_miou_epoch, mean, var, train_loss[2]
+                ckpt_dir,
+                model,
+                optimizer,
+                epoch,
+                best_miou,
+                best_miou_epoch,
+                mean,
+                var,
+                train_loss[2],
             )
             if (epoch + 1) % 20 == 0:
                 torch.save(
@@ -256,12 +284,22 @@ def train_one_epoch(
     # set model to train mode
     model.train()
 
-    loss_function_train, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = train_loss
+    loss_function_train, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = (
+        train_loss
+    )
 
     # summed loss of all resolutions
     losses_lists = {
         loss_name: []
-        for loss_name in ["total", "segmentation", "objectsphere", "ows", "contrastive", "dice", "focal"]
+        for loss_name in [
+            "total",
+            "segmentation",
+            "objectsphere",
+            "ows",
+            "contrastive",
+            "dice",
+            "focal",
+        ]
     }
     loss_weights = {
         "segmentation": 1.0,
@@ -276,7 +314,7 @@ def train_one_epoch(
     if epoch and loss_contrastive is not None:
         mavs = loss_mav.read()
 
-    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
+    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}")
     for sample in progress_bar:
         # load the data and send them to gpu
         image = sample["image"].to(device)
@@ -299,7 +337,7 @@ def train_one_epoch(
             "ows": loss_mav,
             "contrastive": loss_contrastive,
             "dice": loss_dice,
-            "focal": loss_focal
+            "focal": loss_focal,
         }
 
         if losses["focal"] is not None:
@@ -308,11 +346,17 @@ def train_one_epoch(
         if losses["dice"] is not None:
             losses["dice"] = losses["dice"](pred_scales, label.clone().cuda())
         if losses["objectsphere"] is not None:
-            losses["objectsphere"] = losses["objectsphere"](ow_res, label.clone().cuda())
+            losses["objectsphere"] = losses["objectsphere"](
+                ow_res, label.clone().cuda()
+            )
         if losses["ows"] is not None:
-            losses["ows"] = losses["ows"](pred_scales, label.clone().cuda(), is_train=True)
+            losses["ows"] = losses["ows"](
+                pred_scales, label.clone().cuda(), is_train=True
+            )
         if losses["contrastive"] is not None:
-            losses["contrastive"] = losses["contrastive"](mavs, ow_res, label.clone().cuda(), epoch)
+            losses["contrastive"] = losses["contrastive"](
+                mavs, ow_res, label.clone().cuda(), epoch
+            )
 
         losses = {
             loss_name: loss_item
@@ -329,7 +373,9 @@ def train_one_epoch(
             losses_lists[loss_name].append(loss_i.detach())
 
         if torch.isnan(losses["total"]):
-            import ipdb;ipdb.set_trace()  # fmt: skip
+            import ipdb
+
+            ipdb.set_trace()  # fmt: skip
             raise ValueError("Loss is None")
 
         total_loss.backward()
@@ -338,15 +384,12 @@ def train_one_epoch(
         # print log
         samples_of_epoch += batch_size
 
-        learning_rates = [
-            pg['lr'] for pg in optimizer.param_groups
-        ]
+        learning_rates = [pg["lr"] for pg in optimizer.param_groups]
 
         # Update progress bar
-        progress_bar.set_postfix({
-            'batch_loss': f'{losses["total"]:.4f}',
-            'lr': f'{learning_rates[0]:.6f}'
-        })
+        progress_bar.set_postfix(
+            {"batch_loss": f"{losses['total']:.4f}", "lr": f"{learning_rates[0]:.6f}"}
+        )
 
         if debug_mode:
             # only one batch while debugging
@@ -358,7 +401,9 @@ def train_one_epoch(
     for loss_name, loss_list in losses_lists.items():
         if not loss_list:
             continue
-        writer.add_scalar(f"Loss/{loss_name}", torch.tensor(loss_list).mean().item(), epoch)
+        writer.add_scalar(
+            f"Loss/{loss_name}", torch.tensor(loss_list).mean().item(), epoch
+        )
 
     if loss_mav is not None:
         mean, var = loss_mav.update()
@@ -381,7 +426,7 @@ def validate(
     classes=19,
     plot_results=False,
     plot_path=None,
-    is_train_loader = False
+    is_train_loader=False,
 ):
     valid_split = valid_loader.dataset.split + add_log_key
 
@@ -396,7 +441,9 @@ def validate(
     miou = dict()
     ious = dict()
 
-    loss_function_valid, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = val_loss
+    loss_function_valid, loss_obj, loss_mav, loss_contrastive, loss_focal, loss_dice = (
+        val_loss
+    )
 
     # reset loss (of last validation) to zero
     loss_function_valid.reset_loss()
@@ -408,13 +455,25 @@ def validate(
         task="multiclass", num_classes=classes, average="none", ignore_index=255
     ).to(device)
     compute_recall = Recall(
-        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+        task="multiclass",
+        num_classes=classes,
+        average="none",
+        ignore_index=255,
+        top_k=1,
     ).to(device)
     compute_precision = Precision(
-        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+        task="multiclass",
+        num_classes=classes,
+        average="none",
+        ignore_index=255,
+        top_k=1,
     ).to(device)
     compute_f1 = F1Score(
-        task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
+        task="multiclass",
+        num_classes=classes,
+        average="none",
+        ignore_index=255,
+        top_k=1,
     ).to(device)
     aupr_list = []
 
@@ -467,7 +526,19 @@ def validate(
 
             # plot images every 3 epochs
             if epoch % 3 == 0 and i == 0 and plot_results:
-                plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
+                plot_images(
+                    epoch,
+                    sample,
+                    image,
+                    mavs,
+                    var,
+                    prediction_ss,
+                    prediction_ow,
+                    target,
+                    classes,
+                    use_mav=mavs is not None,
+                    plot_path=plot_path,
+                )
 
             # compute valid loss
             loss_function_valid.add_loss_of_batch(prediction_ss, target)
@@ -543,15 +614,9 @@ def validate(
             torch.mean(precision[i]),
             epoch,
         )
+        writer.add_scalar(f"{prefix}/Class_metrics/f1_{i}", torch.mean(f1[i]), epoch)
         writer.add_scalar(
-            f"{prefix}/Class_metrics/f1_{i}",
-            torch.mean(f1[i]),
-            epoch
-        )
-        writer.add_scalar(
-            f"{prefix}/Class_metrics/auprc_{i}",
-            torch.mean(auprc[i]),
-            epoch
+            f"{prefix}/Class_metrics/auprc_{i}", torch.mean(auprc[i]), epoch
         )
 
     return miou
@@ -683,19 +748,28 @@ def get_optimizer(args, model):
             betas=(0.9, 0.999),
         )
     else:
-        raise NotImplementedError("Currently only SGD and Adam as optimizers are supported. Got {}".format(args.optimizer))
+        raise NotImplementedError(
+            "Currently only SGD and Adam as optimizers are supported. Got {}".format(
+                args.optimizer
+            )
+        )
 
     print("Using {} as optimizer".format(args.optimizer))
-    print("\n\n=========================================================================\n\n")
+    print(
+        "\n\n=========================================================================\n\n"
+    )
     return optimizer
+
 
 def count_trainable_parameters(model):
     """Count the number of trainable parameters in the model."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+
 def print_trainable_params(model, epoch):
     """Print trainable parameters in millions for the current epoch."""
     # Shows: Epoch X | Trainable: Y.YYM/Z.ZZM params (XX.X%)
+
 
 if __name__ == "__main__":
     train_main()

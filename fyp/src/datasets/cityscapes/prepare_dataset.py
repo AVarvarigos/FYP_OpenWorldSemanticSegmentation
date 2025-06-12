@@ -84,7 +84,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "cityscapes_filepath",
         type=str,
-        help="filepath to downloaded (and uncompressed) " "Cityscapes files",
+        help="filepath to downloaded (and uncompressed) Cityscapes files",
     )
     args = parser.parse_args()
 

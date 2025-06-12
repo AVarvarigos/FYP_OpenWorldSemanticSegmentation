@@ -1,5 +1,6 @@
 from label import labels
 
+
 class Bdd100kBase:
     SPLITS = ["train", "valid", "test", "val"]
 
@@ -7,9 +8,7 @@ class Bdd100kBase:
     N_CLASSES = [19]
 
     # 1+19 classes (0: void)
-    CLASS_NAMES = ["void"] + [
-        label.name for label in labels if not label.ignoreInEval
-    ]
+    CLASS_NAMES = ["void"] + [label.name for label in labels if not label.ignoreInEval]
     CLASS_COLORS = [(0, 0, 0)] + [
         label.color for label in labels if not label.ignoreInEval
     ]

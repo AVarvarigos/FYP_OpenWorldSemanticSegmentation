@@ -85,7 +85,9 @@ def prepare_data(classes):
                 # Crop the bounding box from the image
                 crop = img[y : y + h, x : x + w]
                 # Save the cropped image
-                crop_name = f"class_{i + 1}/{name.split('/')[-1].split('.')[0]}_{b_i}.png"
+                crop_name = (
+                    f"class_{i + 1}/{name.split('/')[-1].split('.')[0]}_{b_i}.png"
+                )
                 crop_path = crop_dir.joinpath(crop_name)
                 crop = cv2.resize(
                     crop, (crop_width, crop_height), interpolation=cv2.INTER_LINEAR

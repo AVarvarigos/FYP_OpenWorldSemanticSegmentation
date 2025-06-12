@@ -12,10 +12,20 @@ from matplotlib import pyplot as plt
 
 best_images = []
 
+
 def plot_separate_images(
-    epoch, sample, image, mavs, var, prediction_ss,
-    prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True, delta=0.6
+    epoch,
+    sample,
+    image,
+    mavs,
+    var,
+    prediction_ss,
+    prediction_ow,
+    target,
+    classes,
+    plot_path="./plots",
+    use_mav=True,
+    delta=0.6,
 ):
     var = {k: v.detach().clone() for k, v in var.items()}
 
@@ -27,13 +37,23 @@ def plot_separate_images(
 
     ows_target = torch.zeros_like(target, dtype=torch.float64).to(target.device)
     ows_target[target == -1] = 1
-    batch_errors = torch.mean(F.mse_loss((s_unk - 0.6).relu().bool().float(), ows_target, reduction='none'),dim=[1, 2]).detach().cpu().numpy()
+    batch_errors = (
+        torch.mean(
+            F.mse_loss(
+                (s_unk - 0.6).relu().bool().float(), ows_target, reduction="none"
+            ),
+            dim=[1, 2],
+        )
+        .detach()
+        .cpu()
+        .numpy()
+    )
 
     # ows_target = target.clone().cpu().numpy()
     ows_target *= 255
     ows_target = ows_target.cpu().numpy().astype(np.uint8)
 
-    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    logits_ow = 255 * s_unk  # (s_unk - 0.6).relu().bool().int()
     pred_ow = (s_unk - delta).relu().bool().int()
     pred_ow_np = pred_ow.cpu().numpy()
     logits_ow_np = logits_ow.cpu().numpy()
@@ -48,13 +68,13 @@ def plot_separate_images(
         img_dir = Path(plot_path) / "separate" / current_id
 
         if len(best_images) < 10:
-            best_images.append([img_dir, float('inf')])
+            best_images.append([img_dir, float("inf")])
         else:
             errors = np.array([a[1] for a in best_images])
             if batch_errors[idx] < errors.max():
                 min_idx = errors.argmax()
                 best_images[min_idx] = [img_dir, batch_errors[idx]]
-        
+
         img_dir.mkdir(parents=True, exist_ok=True)  # Create directory for each image
         if idx >= len(sample["image"]):  # Skip if less than 8 images in batch
             break
@@ -110,13 +130,23 @@ def plot_separate_images(
         write_image(target_c, img_dir, "target_c.png")
 
         write_image(ows_binary_gt, img_dir, "ows_binary_gt.png")
-    
+
     return best_images
 
+
 def plot_images(
-    epoch, sample, image, mavs, var, prediction_ss,
-    prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True, delta=0.6
+    epoch,
+    sample,
+    image,
+    mavs,
+    var,
+    prediction_ss,
+    prediction_ow,
+    target,
+    classes,
+    plot_path="./plots",
+    use_mav=True,
+    delta=0.6,
 ):
     # if plot_results and i < 1:  # Limit to first 8 samples for visualization
     # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
@@ -125,7 +155,14 @@ def plot_images(
     var = {k: v.detach().clone() for k, v in var.items()}
 
     # Add column names in the first row
-    column_names = ["Image", "Prediction (SS)", "Logits (OW)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
+    column_names = [
+        "Image",
+        "Prediction (SS)",
+        "Logits (OW)",
+        "Prediction (OW)",
+        "Ground Truth",
+        "OW Binary GT",
+    ]
     for col_idx, col_name in enumerate(column_names):
         axes[0, col_idx].text(
             0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
@@ -141,7 +178,7 @@ def plot_images(
         s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
         s_sem = s_sem.cuda()
         s_unk = (s_unk + s_sem) / 2
-    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
+    logits_ow = 255 * s_unk  # (s_unk - 0.6).relu().bool().int()
     pred_ow = (s_unk - delta).relu().bool().int()
     pred_ow_np = pred_ow.cpu().numpy()
     logits_ow_np = logits_ow.cpu().numpy()
@@ -219,6 +256,7 @@ def plot_images(
     plt.savefig(full_plot_path, bbox_inches="tight")
     plt.close(fig)
 
+
 def write_image(image, dir, filename):
     # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
     fig = plt.figure()
@@ -226,6 +264,7 @@ def write_image(image, dir, filename):
     plt.axis("off")
     plt.savefig(dir / filename, bbox_inches="tight")
     plt.close(fig)
+
 
 def generate_distinct_colors(n):
     colors = []

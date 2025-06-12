@@ -89,8 +89,9 @@ class OWSNetwork(nn.Module):
             )
         else:
             raise NotImplementedError(
-                "Only ResNets as encoder are supported "
-                "so far. Got {}".format(activation)
+                "Only ResNets as encoder are supported so far. Got {}".format(
+                    activation
+                )
             )
 
         # Freeze the backbone
@@ -100,11 +101,31 @@ class OWSNetwork(nn.Module):
 
         self.channels_decoder_in = self.encoder.down_32_channels_out
 
-        self.se_layer0 = SqueezeAndExcitation(self.encoder.down_2_channels_out, reduction) if use_se else nn.Identity()
-        self.se_layer1 = SqueezeAndExcitation(self.encoder.down_4_channels_out, reduction) if use_se else nn.Identity()
-        self.se_layer2 = SqueezeAndExcitation(self.encoder.down_8_channels_out, reduction) if use_se else nn.Identity()
-        self.se_layer3 = SqueezeAndExcitation(self.encoder.down_16_channels_out, reduction) if use_se else nn.Identity()
-        self.se_layer4 = SqueezeAndExcitation(self.encoder.down_32_channels_out, reduction) if use_se else nn.Identity()
+        self.se_layer0 = (
+            SqueezeAndExcitation(self.encoder.down_2_channels_out, reduction)
+            if use_se
+            else nn.Identity()
+        )
+        self.se_layer1 = (
+            SqueezeAndExcitation(self.encoder.down_4_channels_out, reduction)
+            if use_se
+            else nn.Identity()
+        )
+        self.se_layer2 = (
+            SqueezeAndExcitation(self.encoder.down_8_channels_out, reduction)
+            if use_se
+            else nn.Identity()
+        )
+        self.se_layer3 = (
+            SqueezeAndExcitation(self.encoder.down_16_channels_out, reduction)
+            if use_se
+            else nn.Identity()
+        )
+        self.se_layer4 = (
+            SqueezeAndExcitation(self.encoder.down_32_channels_out, reduction)
+            if use_se
+            else nn.Identity()
+        )
 
         if encoder_decoder_fusion == "add":
             layers_skip1 = list()
@@ -191,7 +212,7 @@ class OWSNetwork(nn.Module):
                 norm_layer=nn.BatchNorm2d,
                 embed_dim=768,
                 align_corners=False,
-                num_classes=num_classes
+                num_classes=num_classes,
             )
 
     def forward(self, image):
@@ -255,13 +276,13 @@ if __name__ == "__main__":
     main()
 
 if __name__ == "__main__":
-    
+
     def count_parameters_in_millions(model):
         total_params = sum(p.numel() for p in model.parameters())
-        return total_params / 1_000_000 
-    
+        return total_params / 1_000_000
+
     model = OWSNetwork()
-    print(f'Total number of parameters: {count_parameters_in_millions(model):.2f}M')
+    print(f"Total number of parameters: {count_parameters_in_millions(model):.2f}M")
 
     model.eval()
     image = torch.randn(1, 3, 480, 640)
@@ -271,7 +292,7 @@ if __name__ == "__main__":
     image = Variable(image)
     with torch.no_grad():
         output = model(image)
-        
-    print(f'Input tensor shape: {image.shape}')
-    print(f'Output (semantic) tensor shape: {output[0].shape}')
-    print(f'Output (anomaly) tensor shape: {output[1].shape}')
+
+    print(f"Input tensor shape: {image.shape}")
+    print(f"Output (semantic) tensor shape: {output[0].shape}")
+    print(f"Output (anomaly) tensor shape: {output[1].shape}")

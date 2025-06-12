@@ -20,12 +20,18 @@ class OWLoss(nn.Module):
         self.void_label = void_label
         self.delta = delta
         self.count = torch.zeros(self.n_classes).cuda()  # count for class
-        self.features = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
+        self.features = {
+            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
+        }
         # See https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
         # for implementation of Welford Alg.
         self.ex = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-        self.ex2 = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-        self.var = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
+        self.ex2 = {
+            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
+        }
+        self.var = {
+            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
+        }
 
         self.criterion = torch.nn.L1Loss(reduction="none")
 
@@ -36,7 +42,7 @@ class OWLoss(nn.Module):
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
-        if not hasattr(self, 'smooth'):
+        if not hasattr(self, "smooth"):
             self.smooth = 1e-2
         sem_pred = torch.argmax(torch.softmax(logits, dim=1), dim=1)
         gt_labels = torch.unique(sem_gt).tolist()
@@ -53,7 +59,9 @@ class OWLoss(nn.Module):
             avg_mav = torch.mean(logits_tps, dim=0)
             n_tps = logits_tps.shape[0]
             # features is running mean for mav
-            self.features[label] = (self.features[label] * self.count[label] + avg_mav * n_tps)
+            self.features[label] = (
+                self.features[label] * self.count[label] + avg_mav * n_tps
+            )
 
             # Logits by class for true positive labels
             self.ex[label] += (logits_tps).sum(dim=0)
@@ -61,10 +69,12 @@ class OWLoss(nn.Module):
             self.count[label] += n_tps
             self.features[label] /= self.count[label] + self.smooth
 
-    def forward(self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: bool) -> torch.Tensor:
+    def forward(
+        self, logits: torch.Tensor, sem_gt: torch.Tensor, is_train: bool
+    ) -> torch.Tensor:
         if is_train:
             # update mav only at training time
-            sem_gt = sem_gt#.type(torch.uint8)
+            sem_gt = sem_gt  # .type(torch.uint8)
             self.cumulate(logits, sem_gt)
         if self.previous_features == None:
             return torch.tensor(0.0).cuda()
@@ -103,15 +113,21 @@ class OWLoss(nn.Module):
         self.previous_features = self.features
         self.previous_count = self.count
         for c in self.var.keys():
-            self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + self.smooth)) / (self.count[c] + self.smooth)
+            self.var[c] = (
+                self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + self.smooth)
+            ) / (self.count[c] + self.smooth)
 
         self.epoch += 1
 
         # resetting for next epoch
         self.count = torch.zeros(self.n_classes)  # count for class
-        self.features = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
+        self.features = {
+            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
+        }
         self.ex = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
-        self.ex2 = {i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)}
+        self.ex2 = {
+            i: torch.zeros(self.n_classes).cuda() for i in range(self.n_classes)
+        }
 
         return self.previous_features, self.var
 

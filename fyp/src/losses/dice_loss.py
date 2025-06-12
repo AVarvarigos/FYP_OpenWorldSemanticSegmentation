@@ -17,9 +17,15 @@ class DiceLoss(nn.Module):
             pred_c = pred[:, c]  # Predictions for class c
             target_c = target == c  # One-hot encoded target for class c
 
-            intersection = (pred_c * target_c).sum(dim=(1, 2))  # Element-wise multiplication
-            union = pred_c.sum(dim=(1, 2)) + target_c.sum(dim=(1, 2))  # Sum of all pixels
+            intersection = (pred_c * target_c).sum(
+                dim=(1, 2)
+            )  # Element-wise multiplication
+            union = pred_c.sum(dim=(1, 2)) + target_c.sum(
+                dim=(1, 2)
+            )  # Sum of all pixels
 
-            dice += (2. * intersection + self.smooth) / (union + self.smooth)  # Per-class Dice score
+            dice += (2.0 * intersection + self.smooth) / (
+                union + self.smooth
+            )  # Per-class Dice score
 
         return 1 - dice.mean() / num_classes  # Average Dice Loss across classes

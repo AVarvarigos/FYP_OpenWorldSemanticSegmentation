@@ -57,9 +57,7 @@ labels: List[Label] = [
     Label("building", 10, 2, "construction", 2, False, False, (70, 70, 70)),
     Label("fence", 11, 4, "construction", 2, False, False, (190, 153, 153)),
     Label("garage", 12, 255, "construction", 2, False, True, (180, 100, 180)),
-    Label(
-        "guard rail", 13, 255, "construction", 2, False, True, (180, 165, 180)
-    ),
+    Label("guard rail", 13, 255, "construction", 2, False, True, (180, 165, 180)),
     Label("tunnel", 14, 255, "construction", 2, False, True, (150, 120, 90)),
     Label("wall", 15, 3, "construction", 2, False, False, (102, 102, 156)),
     Label("banner", 16, 255, "object", 3, False, True, (250, 170, 100)),
@@ -70,9 +68,7 @@ labels: List[Label] = [
     Label("polegroup", 21, 255, "object", 3, False, True, (153, 153, 153)),
     Label("street light", 22, 255, "object", 3, False, True, (220, 220, 100)),
     Label("traffic cone", 23, 255, "object", 3, False, True, (255, 70, 0)),
-    Label(
-        "traffic device", 24, 255, "object", 3, False, True, (220, 220, 220)
-    ),
+    Label("traffic device", 24, 255, "object", 3, False, True, (220, 220, 220)),
     Label("traffic light", 25, 6, "object", 3, False, False, (250, 170, 30)),
     Label("traffic sign", 26, 7, "object", 3, False, False, (220, 220, 0)),
     Label(
