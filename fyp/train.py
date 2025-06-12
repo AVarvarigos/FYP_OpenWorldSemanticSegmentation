@@ -13,9 +13,7 @@ import pickle
 import sys
 import time
 from datetime import datetime
-import colorsys
 import random
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim
@@ -24,7 +22,8 @@ from src import losses
 from src.args import ArgumentParser
 from src.build_model import build_model
 from src.prepare_data import prepare_data
-from src.utils import load_ckpt, print_log, save_ckpt_every_epoch
+from src.utils import load_ckpt, save_ckpt_every_epoch
+from src.plot_images import plot_images
 from torch.functional import F
 from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
@@ -520,6 +519,7 @@ def validate(
             compute_f1.update(prediction_ss, target_iou)
             compute_auprc.update(prediction_ss, target_iou)
 
+            # plot images every 3 epochs
             if epoch % 3 == 0 and i == 0 and plot_results:
                 plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
 
@@ -705,145 +705,6 @@ def test_ow(
     ious = compute_iou.compute().detach().cpu()
     writer.add_scalar("Metrics/OWS/known", ious[0], epoch)
     writer.add_scalar("Metrics/OWS/unknown", ious[1], epoch)
-
-
-# plot and save metrics
-def plot_metrics(metric_data, metric_name, epochs, save_path):
-    """
-    Plot metric data against epochs.
-    Args:
-        metric_data: List of metric values.
-        metric_name: Name of the metric (e.g., Loss, mIoU).
-        epochs: List of epoch numbers corresponding to the metric data.
-        save_path: Path to save the plot.
-    """
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs, metric_data, marker="o", label=metric_name)
-    plt.xlabel("Epochs")
-    plt.ylabel(metric_name)
-    plt.title(f"{metric_name} over Epochs")
-    plt.legend()
-    plt.grid()
-    plt.savefig(save_path)
-    plt.close()
-
-def plot_images(
-    epoch, sample, image, mavs, var, prediction_ss,
-    prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True, delta=0.6
-):
-    # if plot_results and i < 1:  # Limit to first 8 samples for visualization
-    # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
-    fig, axes = plt.subplots(9, 6, figsize=(16, 24))  # One extra row for column names
-
-    var = {k: v.detach().clone() for k, v in var.items()}
-
-    # Add column names in the first row
-    column_names = ["Image", "Prediction (SS)", "Logits (OW)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
-    for col_idx, col_name in enumerate(column_names):
-        axes[0, col_idx].text(
-            0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
-        )
-        axes[0, col_idx].axis("off")  # Turn off axes for header
-
-    ows_target = target.clone().cpu().numpy()
-    ows_target[ows_target == -1] = 255
-    ows_target[ows_target < classes] = 0
-
-    s_unk = contrastive_inference(prediction_ow)
-    if use_mav and mavs is not None:
-        s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
-        s_sem = s_sem.cuda()
-        s_unk = (s_unk + s_sem) / 2
-    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
-    pred_ow = (s_unk - delta).relu().bool().int()
-    pred_ow_np = pred_ow.cpu().numpy()
-    logits_ow_np = logits_ow.cpu().numpy()
-
-    # Add images in the subsequent rows
-    for idx in range(8):  # Limit to 8 rows of images
-        if idx >= len(sample["image"]):  # Skip if less than 8 images in batch
-            break
-
-        # Normalize and process the input image
-        image_np = image[idx].detach().cpu().permute(1, 2, 0).numpy()
-        image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
-
-        # Process prediction_ss (semantic segmentation prediction)
-        pred_ss_np = (
-            torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0)
-            .detach()
-            .cpu()
-            .numpy()
-        )
-
-        # Process prediction_ow (open-world segmentation prediction)
-        # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
-        target_copy = target.clone().cpu().numpy()
-
-        # Process the ground truth
-        target_np = target_copy[idx]
-
-        target_c = np.zeros((*target_np.shape, 3), dtype=np.uint8)
-        colors = generate_distinct_colors(classes)
-
-        for i in range(classes):
-            target_c[target_np == i] = colors[i]
-        target_c = target_c.astype(np.uint8)
-
-        pred_ss_np_c = np.zeros_like(target_c)
-        for i in range(classes):
-            pred_ss_np_c[pred_ss_np == i] = colors[i]
-        pred_ss_np_c = pred_ss_np_c.astype(np.uint8)
-
-        ows_binary_gt = ows_target[idx]
-
-        # if use_mav:
-        pred_ow_np_i = pred_ow_np[idx]
-        logits_ow_np_i = logits_ow_np[idx]
-
-        # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
-        axes[idx + 1, 0].imshow(image_np)
-        axes[idx + 1, 0].axis("off")
-
-        axes[idx + 1, 1].imshow(pred_ss_np_c)
-        axes[idx + 1, 1].axis("off")
-
-        # if use_mav:
-        axes[idx + 1, 2].imshow(logits_ow_np_i)
-        axes[idx + 1, 2].axis("off")
-
-        # if use_mav:
-        axes[idx + 1, 3].imshow(pred_ow_np_i)
-        axes[idx + 1, 3].axis("off")
-
-        axes[idx + 1, 4].imshow(target_c)
-        axes[idx + 1, 4].axis("off")
-
-        axes[idx + 1, 5].imshow(ows_binary_gt)
-        axes[idx + 1, 5].axis("off")
-
-    # Save the plot
-    plot_dir = plot_path  # Ensure this is the directory path
-    os.makedirs(plot_dir, exist_ok=True)  # Create the directory if it doesn't exist
-    plot_file = f"val_imgs_epoch_{epoch}.png"
-    full_plot_path = os.path.join(plot_dir, plot_file)  # Full path for the file
-
-    # Save the plot
-    plt.savefig(full_plot_path, bbox_inches="tight")
-    plt.close(fig)
-
-import colorsys
-
-def generate_distinct_colors(n):
-    colors = []
-    for i in range(n):
-        # Generate a color in HSV space and convert it to RGB
-        hue = i / n  # equally spaced hue values
-        rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)  # full saturation and value
-        rgb = [int(c * 255) for c in rgb]  # Convert to 0-255 range
-        colors.append(rgb)
-    return colors
 
 
 def contrastive_inference(predictions, radius=1.0):
