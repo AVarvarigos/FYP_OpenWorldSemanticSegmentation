@@ -148,4 +148,5 @@ class OWLoss(nn.Module):
             mav_tensor[key] = self.previous_features[key]
         return mav_tensor
 
-
+    def set_previous_features(self, features):
+        self.previous_features = features
