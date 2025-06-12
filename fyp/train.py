@@ -11,7 +11,6 @@ import json
 import os
 import pickle
 import sys
-import time
 from datetime import datetime
 import random
 import numpy as np
@@ -25,7 +24,7 @@ from src.prepare_data import prepare_data
 from src.utils import load_ckpt, save_ckpt_every_epoch
 from src.plot_images import plot_images
 from torch.functional import F
-from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Recall, Precision, F1Score, AveragePrecision
@@ -34,7 +33,7 @@ from tqdm import tqdm
 import wandb
 
 # Start a wandb run with `sync_tensorboard=True`
-wandb.init(project="my-project", sync_tensorboard=True)
+wandb.init(project="final-runs-fyp", sync_tensorboard=True)
 
 
 def parse_args():
@@ -127,14 +126,8 @@ def train_main():
     loss_objectosphere = losses.ObjectosphereLoss()
     loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
-
-    # pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
-    #     weight_mode="linear"
-    # )
-    # pixel_sum_valid_data_weighted = np.sum(pixel_sum_valid_data * class_weighting)
     loss_function_valid = losses.CrossEntropyLoss2dForValidData(
         weight=class_weighting,
-        # weighted_pixel_sum=pixel_sum_valid_data_weighted,
         device=device,
     )
 
@@ -158,16 +151,6 @@ def train_main():
 
     optimizer = get_optimizer(args, model)
 
-    # in this script lr_scheduler.step() is only called once per epoch
-    # lr_scheduler = OneCycleLR(
-    #     optimizer,
-    #     max_lr=[i["lr"] for i in optimizer.param_groups],
-    #     total_steps=args.epochs,
-    #     div_factor=25,
-    #     pct_start=0.1,
-    #     anneal_strategy="cos",
-    #     final_div_factor=1e4,
-    # )
     lr_scheduler = ReduceLROnPlateau(
         optimizer,
         mode='min',
@@ -196,11 +179,6 @@ def train_main():
 
     # start training -----------------------------------------------------------
     for epoch in range(int(start_epoch), args.epochs):
-        # unfreeze
-        if args.freeze == epoch and args.finetune is None:
-            for param in model.parameters():
-                param.requires_grad = True
-
         mean, var = train_one_epoch(
             model=model,
             train_loader=train_loader,
@@ -229,21 +207,6 @@ def train_main():
             classes=args.num_classes,
             plot_results=args.plot_results,
             plot_path=os.path.join(ckpt_dir, "val_results")
-        )
-
-        train_miou = validate(
-            model=model,
-            var=var,
-            valid_loader=train_loader,
-            device=device,
-            val_loss=val_loss,
-            epoch=epoch,
-            debug_mode=args.debug,
-            writer=writer,
-            classes=args.num_classes,
-            plot_results=args.plot_results,
-            plot_path=os.path.join(ckpt_dir, "train_results"),
-            is_train_loader = True
         )
 
         writer.flush()
@@ -288,7 +251,6 @@ def train_one_epoch(
     writer,
     debug_mode=False,
 ):
-    # lr_scheduler.step(epoch)
     samples_of_epoch = 0
 
     # set model to train mode
@@ -316,18 +278,12 @@ def train_one_epoch(
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
     for sample in progress_bar:
-        start_time_for_one_step = time.time()
-
         # load the data and send them to gpu
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
-        # TODO: wt is dis?
-        # label = sample["label"].long().cuda() - 1
-        # label[label < 0] = 255
+        # Due to how preprocessing works
         label = sample["label"].cuda().long() - 2
-        # label_ss[label_ss == 255] = 0
-        # target_scales = label_ss
 
         # NOTE: for future me, for some weird reason I can not explain, this is necessary.
         for param in model.parameters():
@@ -335,11 +291,7 @@ def train_one_epoch(
 
         # forward pass
         pred_scales, ow_res = model(image)
-        # cw_target = label_ss.clone()
-        # cw_target[cw_target > 15] = -1
         loss = loss_function_train(pred_scales, label.clone().cuda())
-        # label = sample["label"].long().cuda()
-        # label[label < 0] = 255
 
         losses = {
             "segmentation": loss,
@@ -385,7 +337,6 @@ def train_one_epoch(
 
         # print log
         samples_of_epoch += batch_size
-        time_inter = time.time() - start_time_for_one_step
 
         learning_rates = [
             pg['lr'] for pg in optimizer.param_groups
@@ -396,16 +347,6 @@ def train_one_epoch(
             'batch_loss': f'{losses["total"]:.4f}',
             'lr': f'{learning_rates[0]:.6f}'
         })
-
-        # print_log(
-        #     epoch,
-        #     samples_of_epoch,
-        #     batch_size,
-        #     len(train_loader.dataset),
-        #     losses["total"],
-        #     time_inter,
-        #     learning_rates,
-        # )
 
         if debug_mode:
             # only one batch while debugging
@@ -475,9 +416,7 @@ def validate(
     compute_f1 = F1Score(
         task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
     ).to(device)
-    compute_auprc = AveragePrecision(
-        task="multiclass", num_classes=classes, average="none", ignore_index=255
-    ).to(device)
+    aupr_list = []
 
     mavs = None
     if loss_contrastive is not None:
@@ -509,6 +448,10 @@ def validate(
             if not device.type == "cpu":
                 torch.cuda.synchronize()
 
+            compute_auprc = AveragePrecision(
+                task="multiclass", num_classes=classes, average="none", ignore_index=255
+            ).to(device)
+
             target = sample["label"].long().to(device) - 2
             # target = sample["label"].clone().cuda()
             target_iou = target.clone()
@@ -518,6 +461,9 @@ def validate(
             compute_precision.update(prediction_ss, target_iou)
             compute_f1.update(prediction_ss, target_iou)
             compute_auprc.update(prediction_ss, target_iou)
+            auprc = compute_auprc(prediction_ss, target_iou)
+            np.nan_to_num(auprc, copy=False)  # replace NaN with 0
+            aupr_list.append(auprc.cpu().detach().numpy())
 
             # plot images every 3 epochs
             if epoch % 3 == 0 and i == 0 and plot_results:
@@ -538,12 +484,6 @@ def validate(
                 i_loss_dice = loss_dice(prediction_ss, target)
             total_loss_dice.append(i_loss_dice.cpu().detach().numpy())
             if loss_obj is not None:
-                # CityScapes uses all classes
-                # BDDAnomoly does not use 16-18
-                # target_obj = sample["label"].clone().cuda()
-                # target_obj[target_obj == 16] = -1
-                # target_obj[target_obj == 17] = -1
-                # target_obj[target_obj == 18] = -1
                 loss_objectosphere = loss_obj(prediction_ow, target)
             total_loss_obj.append(loss_objectosphere.cpu().detach().numpy())
             if loss_mav is not None:
@@ -569,8 +509,8 @@ def validate(
     f1 = compute_f1.compute().detach().cpu()
     m_f1 = f1.mean()
 
-    auprc = compute_auprc.compute().detach().cpu()
-    m_auprc = auprc.mean()
+    auprc = np.array(aupr_list).mean(axis=0)
+    m_auprc = np.mean(auprc)
 
     total_loss = (
         loss_function_valid.compute_whole_loss()
