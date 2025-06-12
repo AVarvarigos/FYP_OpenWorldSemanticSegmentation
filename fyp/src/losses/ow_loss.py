@@ -9,12 +9,10 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from pathlib import Path
-import json
 
 
 class OWLoss(nn.Module):
-    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1, save_dir=None, applied=True):
+    def __init__(self, n_classes, hinged=True, delta=0.1, void_label=-1, applied=True):
         super().__init__()
         self.smooth = 1e-2
         self.n_classes = n_classes
@@ -35,12 +33,6 @@ class OWLoss(nn.Module):
         self.previous_count = None
         self.epoch = 0
         self.applied = applied
-        if save_dir is None:
-            save_dir = Path.cwd()
-        if save_dir is not None:
-            save_dir = Path(save_dir).joinpath('monitor')
-            save_dir.mkdir(parents=True, exist_ok=True)
-            self.save_dir = save_dir
 
     @torch.no_grad()
     def cumulate(self, logits: torch.Tensor, sem_gt: torch.Tensor):
@@ -58,8 +50,6 @@ class OWLoss(nn.Module):
             if tps_current.sum() == 0:
                 continue
             logits_tps = logits_permuted[torch.where(tps_current == 1)]
-            # max_values = logits_tps[:, label].unsqueeze(1)
-            # logits_tps = logits_tps / max_values
             avg_mav = torch.mean(logits_tps, dim=0)
             n_tps = logits_tps.shape[0]
             # features is running mean for mav
@@ -86,17 +76,13 @@ class OWLoss(nn.Module):
         if not self.applied:
             return acc_loss
         for label in gt_labels[1:]:
-            # var_selection = self.var[label] > 1e-5
-            # if var_selection.sum() == 0:
-            #     continue
             mav = self.previous_features[label]
             logs = logits_permuted[torch.where(sem_gt == label)]
             mav = mav.expand(logs.shape[0], -1)
             if self.previous_count[label] > 0 and not self.var[label].sum() == 0:
                 ew_l1 = self.criterion(logs, mav)
-                # ew_l1 = ew_l1[:, var_selection] / (self.var[label][var_selection] + self.smooth)
-                # Car variance [0:1]
-                # We do this because the vairances become too small and the loss explodes
+                # Normalize by variance
+                # If variance is zero, we set it to the minimum non-zero value
                 filter_out_zero = self.var[label] > 0
                 variance = self.var[label].clone()
                 non_zero_min = variance[filter_out_zero].abs().min()
@@ -118,19 +104,6 @@ class OWLoss(nn.Module):
         self.previous_count = self.count
         for c in self.var.keys():
             self.var[c] = (self.ex2[c] - self.ex[c] ** 2 / (self.count[c] + self.smooth)) / (self.count[c] + self.smooth)
-            # Save to file with json
-            with open(self.save_dir.joinpath(f"var_{self.epoch}.json"), "w") as f:
-                var_to_save = {k: v.cpu().numpy().tolist() for k, v in self.var.items()}
-                json.dump(var_to_save, f)
-            with open(self.save_dir.joinpath(f"ex2_{self.epoch}.json"), "w") as f:
-                ex2_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex2.items()}
-                json.dump(ex2_to_save, f)
-            with open(self.save_dir.joinpath(f"ex_{self.epoch}.json"), "w") as f:
-                ex_to_save = {k: v.cpu().numpy().tolist() for k, v in self.ex.items()}
-                json.dump(ex_to_save, f)
-            with open(self.save_dir.joinpath(f"count_{self.epoch}.json"), "w") as f:
-                count_to_save = self.count.cpu().numpy().tolist()
-                json.dump(count_to_save, f)
 
         self.epoch += 1
 

@@ -1,7 +1,5 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 
 class DiceLoss(nn.Module):
@@ -10,17 +8,6 @@ class DiceLoss(nn.Module):
         self.smooth = 1e-5
 
     def forward(self, pred, target):
-        """
-        Computes Dice Loss for multi-class segmentation.
-        Args:
-            pred: Tensor of predictions (batch_size, C, H, W).
-            target: One-hot encoded ground truth (batch_size, C, H, W).
-            smooth: Smoothing factor.
-        Returns:
-            Scalar Dice Loss.
-
-        https://medium.com/data-scientists-diary/implementation-of-dice-loss-vision-pytorch-7eef1e438f68
-        """
         pred = F.softmax(pred, dim=1)  # Convert logits to probabilities
         num_classes = pred.shape[1]  # Number of classes (C)
         dice = 0  # Initialize Dice loss accumulator

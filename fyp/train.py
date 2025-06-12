@@ -124,7 +124,7 @@ def train_main():
     focal_loss = losses.FocalLoss(alpha=class_weighting)
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
-    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
     loss_function_valid = losses.CrossEntropyLoss2dForValidData(
         weight=class_weighting,
