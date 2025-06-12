@@ -9,7 +9,6 @@
 
 import argparse as ap
 from collections import OrderedDict
-import json
 import os
 import shutil
 
@@ -18,7 +17,7 @@ from PIL import Image
 from tqdm import tqdm
 import cv2
 
-from bdd100k import Bdd100kBase
+from .bdd100k import Bdd100kBase
 
 
 RGB_DIR = "leftImg8bit"
@@ -186,7 +185,7 @@ if __name__ == "__main__":
 
         # full: 1+19 classes (original label file -> just copy file)
         dest_path = os.path.join(
-            args.output_path, subset, Bdd100kBase.LABELS_REDUCED_DIR
+            args.output_path, subset, Bdd100kBase.LABELS_DIR
         )
         os.makedirs(dest_path, exist_ok=True)
         # print(l_fp, '->', os.path.join(dest_path, basename))
@@ -196,13 +195,13 @@ if __name__ == "__main__":
 
         # full: 1+19 classes colored
         dest_path = os.path.join(
-            args.output_path, subset, Bdd100kBase.LABELS_REDUCED_COLORED_DIR
+            args.output_path, subset, Bdd100kBase.LABELS_COLORED_DIR
         )
         os.makedirs(dest_path, exist_ok=True)
         save_indexed_png(
             os.path.join(dest_path, basename),
             label_full,
-            colormap=Bdd100kBase.CLASS_COLORS_FULL,
+            colormap=Bdd100kBase.CLASS_COLORS,
         )
 
     # ensure that filelists are valid and faultless
@@ -224,13 +223,13 @@ if __name__ == "__main__":
     print("Writing meta files")
     np.savetxt(
         os.path.join(output_path, "class_names_1+19.txt"),
-        Bdd100kBase.CLASS_NAMES_REDUCED,
+        Bdd100kBase.CLASS_NAMES,
         delimiter=",",
         fmt="%s",
     )
     np.savetxt(
         os.path.join(output_path, "class_colors_1+19.txt"),
-        Bdd100kBase.CLASS_COLORS_REDUCED,
+        Bdd100kBase.CLASS_COLORS,
         delimiter=",",
         fmt="%s",
     )

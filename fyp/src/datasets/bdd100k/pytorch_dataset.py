@@ -91,14 +91,9 @@ class Bdd100k(Bdd100kBase, DatasetBase):
         else:
             print(f"Loaded {self.__class__.__name__} dataset without files")
         # class names, class colors, and label directory
-        if self._n_classes == 19:
-            self._class_names = self.CLASS_NAMES_REDUCED
-            self._class_colors = np.array(self.CLASS_COLORS_REDUCED, dtype="uint8")
-            self._label_dir = self.LABELS_REDUCED_DIR
-        else:
-            self._class_names = self.CLASS_NAMES_FULL
-            self._class_colors = np.array(self.CLASS_COLORS_FULL, dtype="uint8")
-            self._label_dir = self.LABELS_FULL_DIR
+        self._class_names = self.CLASS_NAMES
+        self._class_colors = np.array(self.CLASS_COLORS, dtype="uint8")
+        self._label_dir = self.LABELS_DIR
 
     @property
     def cameras(self):
