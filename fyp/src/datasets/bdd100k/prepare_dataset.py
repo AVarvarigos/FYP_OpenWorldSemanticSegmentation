@@ -17,7 +17,7 @@ from PIL import Image
 from tqdm import tqdm
 import cv2
 
-from .bdd100k import Bdd100kBase
+from bdd100k import Bdd100kBase
 
 
 RGB_DIR = "leftImg8bit"
