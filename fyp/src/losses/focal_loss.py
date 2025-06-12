@@ -3,13 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FocalLoss(nn.Module):
-    """
-    increase gamma to put more focus on hard, misclassified examples
-    gamma must be >= 0
-    alpha is a balance factor for positive and negative examples
-
-    see https://github.com/clcarwin/focal_loss_pytorch/blob/e11e75bad957aecf641db6998a1016204722c1bb/focalloss.py
-    """
     def __init__(self, alpha, gamma=2.0, size_average=True, void_label=-1):
         super(FocalLoss, self).__init__()
         self.gamma = gamma

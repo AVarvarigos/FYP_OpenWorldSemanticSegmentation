@@ -11,11 +11,8 @@ import json
 import os
 import pickle
 import sys
-import time
 from datetime import datetime
-import colorsys
 import random
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim
@@ -24,9 +21,10 @@ from src import losses
 from src.args import ArgumentParser
 from src.build_model import build_model
 from src.prepare_data import prepare_data
-from src.utils import load_ckpt, print_log, save_ckpt_every_epoch
+from src.utils import load_ckpt, save_ckpt_every_epoch
+from src.plot_images import plot_images
 from torch.functional import F
-from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Recall, Precision, F1Score, AveragePrecision
@@ -35,7 +33,7 @@ from tqdm import tqdm
 import wandb
 
 # Start a wandb run with `sync_tensorboard=True`
-wandb.init(project="my-project", sync_tensorboard=True)
+wandb.init(project="final-runs-fyp", sync_tensorboard=True)
 
 
 def parse_args():
@@ -126,16 +124,10 @@ def train_main():
     focal_loss = losses.FocalLoss(alpha=class_weighting)
     dice_loss = losses.DiceLoss()
     loss_objectosphere = losses.ObjectosphereLoss()
-    loss_mav = losses.OWLoss(n_classes=n_classes_without_void, save_dir=ckpt_dir)
+    loss_mav = losses.OWLoss(n_classes=n_classes_without_void)
     loss_contrastive = losses.ContrastiveLoss(n_classes=n_classes_without_void)
-
-    # pixel_sum_valid_data = valid_loader.dataset.compute_class_weights(
-    #     weight_mode="linear"
-    # )
-    # pixel_sum_valid_data_weighted = np.sum(pixel_sum_valid_data * class_weighting)
     loss_function_valid = losses.CrossEntropyLoss2dForValidData(
         weight=class_weighting,
-        # weighted_pixel_sum=pixel_sum_valid_data_weighted,
         device=device,
     )
 
@@ -159,16 +151,6 @@ def train_main():
 
     optimizer = get_optimizer(args, model)
 
-    # in this script lr_scheduler.step() is only called once per epoch
-    # lr_scheduler = OneCycleLR(
-    #     optimizer,
-    #     max_lr=[i["lr"] for i in optimizer.param_groups],
-    #     total_steps=args.epochs,
-    #     div_factor=25,
-    #     pct_start=0.1,
-    #     anneal_strategy="cos",
-    #     final_div_factor=1e4,
-    # )
     lr_scheduler = ReduceLROnPlateau(
         optimizer,
         mode='min',
@@ -197,11 +179,6 @@ def train_main():
 
     # start training -----------------------------------------------------------
     for epoch in range(int(start_epoch), args.epochs):
-        # unfreeze
-        if args.freeze == epoch and args.finetune is None:
-            for param in model.parameters():
-                param.requires_grad = True
-
         mean, var = train_one_epoch(
             model=model,
             train_loader=train_loader,
@@ -230,21 +207,6 @@ def train_main():
             classes=args.num_classes,
             plot_results=args.plot_results,
             plot_path=os.path.join(ckpt_dir, "val_results")
-        )
-
-        train_miou = validate(
-            model=model,
-            var=var,
-            valid_loader=train_loader,
-            device=device,
-            val_loss=val_loss,
-            epoch=epoch,
-            debug_mode=args.debug,
-            writer=writer,
-            classes=args.num_classes,
-            plot_results=args.plot_results,
-            plot_path=os.path.join(ckpt_dir, "train_results"),
-            is_train_loader = True
         )
 
         writer.flush()
@@ -289,7 +251,6 @@ def train_one_epoch(
     writer,
     debug_mode=False,
 ):
-    # lr_scheduler.step(epoch)
     samples_of_epoch = 0
 
     # set model to train mode
@@ -317,18 +278,12 @@ def train_one_epoch(
 
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
     for sample in progress_bar:
-        start_time_for_one_step = time.time()
-
         # load the data and send them to gpu
         image = sample["image"].to(device)
         batch_size = image.data.shape[0]
 
-        # TODO: wt is dis?
-        # label = sample["label"].long().cuda() - 1
-        # label[label < 0] = 255
+        # Due to how preprocessing works
         label = sample["label"].cuda().long() - 2
-        # label_ss[label_ss == 255] = 0
-        # target_scales = label_ss
 
         # NOTE: for future me, for some weird reason I can not explain, this is necessary.
         for param in model.parameters():
@@ -336,11 +291,7 @@ def train_one_epoch(
 
         # forward pass
         pred_scales, ow_res = model(image)
-        # cw_target = label_ss.clone()
-        # cw_target[cw_target > 15] = -1
         loss = loss_function_train(pred_scales, label.clone().cuda())
-        # label = sample["label"].long().cuda()
-        # label[label < 0] = 255
 
         losses = {
             "segmentation": loss,
@@ -386,7 +337,6 @@ def train_one_epoch(
 
         # print log
         samples_of_epoch += batch_size
-        time_inter = time.time() - start_time_for_one_step
 
         learning_rates = [
             pg['lr'] for pg in optimizer.param_groups
@@ -397,16 +347,6 @@ def train_one_epoch(
             'batch_loss': f'{losses["total"]:.4f}',
             'lr': f'{learning_rates[0]:.6f}'
         })
-
-        # print_log(
-        #     epoch,
-        #     samples_of_epoch,
-        #     batch_size,
-        #     len(train_loader.dataset),
-        #     losses["total"],
-        #     time_inter,
-        #     learning_rates,
-        # )
 
         if debug_mode:
             # only one batch while debugging
@@ -476,9 +416,7 @@ def validate(
     compute_f1 = F1Score(
         task="multiclass", num_classes=classes, average="none", ignore_index=255, top_k=1
     ).to(device)
-    compute_auprc = AveragePrecision(
-        task="multiclass", num_classes=classes, average="none", ignore_index=255
-    ).to(device)
+    aupr_list = []
 
     mavs = None
     if loss_contrastive is not None:
@@ -510,6 +448,10 @@ def validate(
             if not device.type == "cpu":
                 torch.cuda.synchronize()
 
+            compute_auprc = AveragePrecision(
+                task="multiclass", num_classes=classes, average="none", ignore_index=255
+            ).to(device)
+
             target = sample["label"].long().to(device) - 2
             # target = sample["label"].clone().cuda()
             target_iou = target.clone()
@@ -519,7 +461,11 @@ def validate(
             compute_precision.update(prediction_ss, target_iou)
             compute_f1.update(prediction_ss, target_iou)
             compute_auprc.update(prediction_ss, target_iou)
+            auprc = compute_auprc(prediction_ss, target_iou)
+            np.nan_to_num(auprc, copy=False)  # replace NaN with 0
+            aupr_list.append(auprc.cpu().detach().numpy())
 
+            # plot images every 3 epochs
             if epoch % 3 == 0 and i == 0 and plot_results:
                 plot_images(epoch, sample, image, mavs, var, prediction_ss, prediction_ow, target, classes, use_mav=mavs is not None, plot_path=plot_path)
 
@@ -538,12 +484,6 @@ def validate(
                 i_loss_dice = loss_dice(prediction_ss, target)
             total_loss_dice.append(i_loss_dice.cpu().detach().numpy())
             if loss_obj is not None:
-                # CityScapes uses all classes
-                # BDDAnomoly does not use 16-18
-                # target_obj = sample["label"].clone().cuda()
-                # target_obj[target_obj == 16] = -1
-                # target_obj[target_obj == 17] = -1
-                # target_obj[target_obj == 18] = -1
                 loss_objectosphere = loss_obj(prediction_ow, target)
             total_loss_obj.append(loss_objectosphere.cpu().detach().numpy())
             if loss_mav is not None:
@@ -569,8 +509,8 @@ def validate(
     f1 = compute_f1.compute().detach().cpu()
     m_f1 = f1.mean()
 
-    auprc = compute_auprc.compute().detach().cpu()
-    m_auprc = auprc.mean()
+    auprc = np.array(aupr_list).mean(axis=0)
+    m_auprc = np.mean(auprc)
 
     total_loss = (
         loss_function_valid.compute_whole_loss()
@@ -705,145 +645,6 @@ def test_ow(
     ious = compute_iou.compute().detach().cpu()
     writer.add_scalar("Metrics/OWS/known", ious[0], epoch)
     writer.add_scalar("Metrics/OWS/unknown", ious[1], epoch)
-
-
-# plot and save metrics
-def plot_metrics(metric_data, metric_name, epochs, save_path):
-    """
-    Plot metric data against epochs.
-    Args:
-        metric_data: List of metric values.
-        metric_name: Name of the metric (e.g., Loss, mIoU).
-        epochs: List of epoch numbers corresponding to the metric data.
-        save_path: Path to save the plot.
-    """
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs, metric_data, marker="o", label=metric_name)
-    plt.xlabel("Epochs")
-    plt.ylabel(metric_name)
-    plt.title(f"{metric_name} over Epochs")
-    plt.legend()
-    plt.grid()
-    plt.savefig(save_path)
-    plt.close()
-
-def plot_images(
-    epoch, sample, image, mavs, var, prediction_ss,
-    prediction_ow, target, classes,
-    plot_path='./plots', use_mav=True, delta=0.6
-):
-    # if plot_results and i < 1:  # Limit to first 8 samples for visualization
-    # Create figure with 8 rows and 4 columns (adding a column for prediction_ow)
-    fig, axes = plt.subplots(9, 6, figsize=(16, 24))  # One extra row for column names
-
-    var = {k: v.detach().clone() for k, v in var.items()}
-
-    # Add column names in the first row
-    column_names = ["Image", "Prediction (SS)", "Logits (OW)", "Prediction (OW)", "Ground Truth", "OW Binary GT"]
-    for col_idx, col_name in enumerate(column_names):
-        axes[0, col_idx].text(
-            0.5, 0.5, col_name, ha="center", va="center", fontsize=16, weight="bold"
-        )
-        axes[0, col_idx].axis("off")  # Turn off axes for header
-
-    ows_target = target.clone().cpu().numpy()
-    ows_target[ows_target == -1] = 255
-    ows_target[ows_target < classes] = 0
-
-    s_unk = contrastive_inference(prediction_ow)
-    if use_mav and mavs is not None:
-        s_sem, similarity = semantic_inference(prediction_ss, mavs, var)
-        s_sem = s_sem.cuda()
-        s_unk = (s_unk + s_sem) / 2
-    logits_ow = 255 * s_unk #(s_unk - 0.6).relu().bool().int()
-    pred_ow = (s_unk - delta).relu().bool().int()
-    pred_ow_np = pred_ow.cpu().numpy()
-    logits_ow_np = logits_ow.cpu().numpy()
-
-    # Add images in the subsequent rows
-    for idx in range(8):  # Limit to 8 rows of images
-        if idx >= len(sample["image"]):  # Skip if less than 8 images in batch
-            break
-
-        # Normalize and process the input image
-        image_np = image[idx].detach().cpu().permute(1, 2, 0).numpy()
-        image_np = (image_np - image_np.min()) / (image_np.max() - image_np.min())
-
-        # Process prediction_ss (semantic segmentation prediction)
-        pred_ss_np = (
-            torch.argmax(torch.softmax(prediction_ss[idx], dim=0), dim=0)
-            .detach()
-            .cpu()
-            .numpy()
-        )
-
-        # Process prediction_ow (open-world segmentation prediction)
-        # pred_ow_np = prediction_ow[idx, 0].detach().cpu().numpy()
-        target_copy = target.clone().cpu().numpy()
-
-        # Process the ground truth
-        target_np = target_copy[idx]
-
-        target_c = np.zeros((*target_np.shape, 3), dtype=np.uint8)
-        colors = generate_distinct_colors(classes)
-
-        for i in range(classes):
-            target_c[target_np == i] = colors[i]
-        target_c = target_c.astype(np.uint8)
-
-        pred_ss_np_c = np.zeros_like(target_c)
-        for i in range(classes):
-            pred_ss_np_c[pred_ss_np == i] = colors[i]
-        pred_ss_np_c = pred_ss_np_c.astype(np.uint8)
-
-        ows_binary_gt = ows_target[idx]
-
-        # if use_mav:
-        pred_ow_np_i = pred_ow_np[idx]
-        logits_ow_np_i = logits_ow_np[idx]
-
-        # Display Image, Prediction (SS), Prediction (OW), and Ground Truth
-        axes[idx + 1, 0].imshow(image_np)
-        axes[idx + 1, 0].axis("off")
-
-        axes[idx + 1, 1].imshow(pred_ss_np_c)
-        axes[idx + 1, 1].axis("off")
-
-        # if use_mav:
-        axes[idx + 1, 2].imshow(logits_ow_np_i)
-        axes[idx + 1, 2].axis("off")
-
-        # if use_mav:
-        axes[idx + 1, 3].imshow(pred_ow_np_i)
-        axes[idx + 1, 3].axis("off")
-
-        axes[idx + 1, 4].imshow(target_c)
-        axes[idx + 1, 4].axis("off")
-
-        axes[idx + 1, 5].imshow(ows_binary_gt)
-        axes[idx + 1, 5].axis("off")
-
-    # Save the plot
-    plot_dir = plot_path  # Ensure this is the directory path
-    os.makedirs(plot_dir, exist_ok=True)  # Create the directory if it doesn't exist
-    plot_file = f"val_imgs_epoch_{epoch}.png"
-    full_plot_path = os.path.join(plot_dir, plot_file)  # Full path for the file
-
-    # Save the plot
-    plt.savefig(full_plot_path, bbox_inches="tight")
-    plt.close(fig)
-
-import colorsys
-
-def generate_distinct_colors(n):
-    colors = []
-    for i in range(n):
-        # Generate a color in HSV space and convert it to RGB
-        hue = i / n  # equally spaced hue values
-        rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)  # full saturation and value
-        rgb = [int(c * 255) for c in rgb]  # Convert to 0-255 range
-        colors.append(rgb)
-    return colors
 
 
 def contrastive_inference(predictions, radius=1.0):
