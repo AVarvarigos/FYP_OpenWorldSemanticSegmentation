@@ -1,9 +1,8 @@
 import numpy as np
-import torch.nn as nn
 import torch
-
-from torch.nn.modules import module
+import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.modules import module
 
 from src.models_v2.decoder import Upsample
 

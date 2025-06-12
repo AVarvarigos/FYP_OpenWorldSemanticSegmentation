@@ -7,8 +7,8 @@
 # LICENSE file in the root directory of this source tree
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 # This is training the model to do anomaly segmentation - it is being trained to differentiate between known and unknown classes

@@ -12,7 +12,6 @@ import torch.nn.functional as F
 
 from src.models_v2.model_utils import ConvBNAct
 
-
 __all__ = [
     "PyramidPoolingModule",
     "AdaptivePyramidPoolingModule",

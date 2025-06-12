@@ -8,11 +8,10 @@
 
 import torch
 from torch import nn
+from torchsummary import summary
 
 from src.models_v2.model import OWSNetwork
 from src.models_v2.resnet import ResNet
-
-from torchsummary import summary
 
 
 def build_model(args, n_classes):

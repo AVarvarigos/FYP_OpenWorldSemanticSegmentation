@@ -10,8 +10,8 @@
 import torch
 import torch.nn as nn
 
-from src.models_v2.resnet import NonBottleneck1D
 from src.models_v2.model_utils import ConvBNAct
+from src.models_v2.resnet import NonBottleneck1D
 
 
 class Decoder(nn.Module):

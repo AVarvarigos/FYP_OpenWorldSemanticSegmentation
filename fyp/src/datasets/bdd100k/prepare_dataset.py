@@ -8,17 +8,15 @@
 
 
 import argparse as ap
-from collections import OrderedDict
 import os
 import shutil
+from collections import OrderedDict
 
+import cv2
 import numpy as np
+from bdd100k import Bdd100kBase
 from PIL import Image
 from tqdm import tqdm
-import cv2
-
-from bdd100k import Bdd100kBase
-
 
 RGB_DIR = "leftImg8bit"
 PARAMETERS_RAW_DIR = "camera"

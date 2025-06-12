@@ -8,18 +8,16 @@
 
 
 import argparse as ap
-from collections import OrderedDict
 import json
 import os
 import shutil
+from collections import OrderedDict
 
+import cv2
 import numpy as np
+from cityscapes import CityscapesBase
 from PIL import Image
 from tqdm import tqdm
-import cv2
-
-from cityscapes import CityscapesBase
-
 
 RGB_DIR = "leftImg8bit"
 PARAMETERS_RAW_DIR = "camera"

@@ -10,12 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.models_v2.resnet import ResNet18, ResNet34, ResNet50
 from src.models_v2.context_modules import get_context_module
-from src.models_v2.model_utils import ConvBNAct, Swish, Hswish
 from src.models_v2.decoder import Decoder
-from src.models_v2.tru_for_decoder import TruForDecoderHead
+from src.models_v2.model_utils import ConvBNAct, Hswish, Swish
 from src.models_v2.neck import SqueezeAndExcitation
+from src.models_v2.resnet import ResNet18, ResNet34, ResNet50
+from src.models_v2.tru_for_decoder import TruForDecoderHead
 
 
 class OWSNetwork(nn.Module):
